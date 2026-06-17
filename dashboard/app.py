@@ -210,6 +210,43 @@ def _load_unplayed_for_date(date_iso: str) -> list[dict]:
     return _get_unplayed_for_date_cached(date_iso, str(DEFAULT_CACHE_PATH))
 
 
+def _schedule_cache_present() -> bool:
+    """Return True when the 2026 schedule cache file exists on disk.
+
+    The dashboard uses this to distinguish two distinct empty states:
+
+    1. **Cache file missing** — schedule data has not been generated yet.
+       The user sees a calm "Schedule data isn't loaded yet" pointer and
+       a Custom matchup escape hatch.  We never show the on-disk path
+       or any recovery CLI (those are internal/operational).
+
+    2. **Cache file present, empty for this date** — schedule data is
+       loaded, but no games are scheduled for the chosen date.  The
+       user sees a "Pick another date" pointer.
+
+    Both paths use plain language; neither leaks the cache path or any
+    internal script reference.
+    """
+    try:
+        from dashboard.data_loader import DEFAULT_CACHE_PATH
+        return bool(DEFAULT_CACHE_PATH.exists())
+    except Exception:
+        return False
+
+
+def _render_schedule_data_not_loaded() -> None:
+    """Render the calm 'schedule data not loaded yet' empty state.
+
+    No script path, no CLI hint — just a clear pointer to the Custom
+    matchup expander below.  Used by Predictions, Bets, and Analysis
+    when the 2026 schedule cache is missing.
+    """
+    st.info(
+        "Schedule data isn't loaded yet. Check back later, or use the "
+        "**Custom matchup** expander below to predict any game."
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Renderers (shared by both flows)
 # --------------------------------------------------------------------------- #
@@ -1149,9 +1186,14 @@ def _render_auto_populate_view(
     st.markdown(f"**Loaded for {loaded_date}** — {len(matches)} unplayed game(s)")
 
     if not matches:
-        st.warning(
-            f"No unplayed matches found for {loaded_date} "
-            "— try fetching live data via `scripts/fetch_live_2026.py`."
+        # Plain language: no script path, no recovery instructions.
+        # Users get a calm "try another date / use custom matchup" pointer
+        # so they aren't sent chasing internal CLI helpers.
+        st.info(
+            f"No matches on {loaded_date}. "
+            "Pick another date above, or use the **Custom matchup** "
+            "expander at the bottom of the Predictions view to predict "
+            "any game."
         )
         return
 
@@ -1644,11 +1686,17 @@ def _render_predictions_view(
     # ---- (3) heading + empty state ---- #
     st.subheader(f"📅 {picked_iso}")
     if not matches:
-        st.markdown(
-            f"**No matches on {picked_iso}.**\n\n"
-            "_Pick another date above, or use the **Custom matchup** "
-            "expander at the bottom to predict any game._"
-        )
+        # Distinguish "cache missing" from "no games on this date" so the
+        # user gets the right pointer — but NEVER leak the on-disk path
+        # or any recovery script reference.
+        if not _schedule_cache_present():
+            _render_schedule_data_not_loaded()
+        else:
+            st.markdown(
+                f"**No matches on {picked_iso}.**\n\n"
+                "_Pick another date above, or use the **Custom matchup** "
+                "expander at the bottom to predict any game._"
+            )
         _render_custom_matchup_expander(
             corpus=corpus,
             name_to_id=name_to_id,
@@ -1776,8 +1824,15 @@ def _render_custom_matchup_expander(
                 home_elo=home_elo,
                 away_elo=away_elo,
             )
-        except Exception as exc:
-            st.error(f"Prediction failed: {exc!s}")
+        except Exception:
+            # Calm, plain-language error — no raw exception text / stack
+            # trace leaks to the user.  They get a clear next step
+            # (try again, or use a different matchup) without technical
+            # internals.  The full traceback stays in the server logs.
+            st.error(
+                "We couldn't compute a prediction for this game right now. "
+                "Try again, or use a different matchup."
+            )
             return
 
         meta = {
@@ -1969,11 +2024,17 @@ def _render_bets_view(
     # ---- (5) heading + empty state ---- #
     st.subheader(f"📅 {picked_iso}")
     if not matches:
-        st.markdown(
-            f"**No matches on {picked_iso}.**\n\n"
-            "_Pick another date above, or use the **Custom bet** expander "
-            "at the bottom to evaluate any game._"
-        )
+        # Distinguish "cache missing" from "no games on this date" so the
+        # user gets the right pointer — but NEVER leak the on-disk path
+        # or any recovery script reference.
+        if not _schedule_cache_present():
+            _render_schedule_data_not_loaded()
+        else:
+            st.markdown(
+                f"**No matches on {picked_iso}.**\n\n"
+                "_Pick another date above, or use the **Custom bet** expander "
+                "at the bottom to evaluate any game._"
+            )
         _render_custom_bet_expander(
             corpus=corpus,
             name_to_id=name_to_id,
@@ -2143,8 +2204,13 @@ def _render_custom_bet_expander(
                 home_elo=home_elo,
                 away_elo=away_elo,
             )
-        except Exception as exc:
-            st.error(f"Prediction failed: {exc!s}")
+        except Exception:
+            # Calm, plain-language error.  No raw exception text /
+            # stack trace.  The full traceback stays in the server logs.
+            st.error(
+                "We couldn't compute a prediction for this game right now. "
+                "Try again, or use a different matchup."
+            )
             return
 
         # Build a synthetic market so the card has all three odds on
@@ -2177,8 +2243,16 @@ def _render_custom_bet_expander(
                     _ss_get(KEYS.BETS_MIN_EDGE, 0.03) or 0.03
                 )
             )
-        except Exception as exc:
-            st.error(f"Couldn't evaluate market: {exc!s}")
+        except ValueError as exc:
+            st.error(str(exc) or "We couldn't evaluate the market for these odds.")
+            return
+        except Exception:
+            # Calm, plain-language error.  No raw exception text / stack
+            # trace leaks to the user.
+            st.error(
+                "We couldn't evaluate the market for these odds. "
+                "Double-check the prices and try again."
+            )
             return
 
         # Render the Most Likely Result + Best Value blocks inline so
@@ -2421,11 +2495,17 @@ def _render_analysis_view(
     # ---- (4) heading + empty state ---- #
     st.subheader(f"📅 {picked_iso}")
     if not matches:
-        st.markdown(
-            f"**No matches on {picked_iso}.**\n\n"
-            "_Pick another date above, or use the **Custom matchup** "
-            "expander in **Predictions** to predict any game._"
-        )
+        # Distinguish "cache missing" from "no games on this date" so the
+        # user gets the right pointer — but NEVER leak the on-disk path
+        # or any recovery script reference.
+        if not _schedule_cache_present():
+            _render_schedule_data_not_loaded()
+        else:
+            st.markdown(
+                f"**No matches on {picked_iso}.**\n\n"
+                "_Pick another date above, or use the **Custom matchup** "
+                "expander in **Predictions** to predict any game._"
+            )
         return
 
     st.caption(

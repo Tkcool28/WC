@@ -315,10 +315,19 @@ def render_bet_card(
             min_edge=_min_edge_global(),
         )
     except ValueError as exc:
-        st.error(f"Couldn't evaluate market: {exc}")
+        # ValueError typically means the odds math rejected the input
+        # (e.g. invalid price).  Show the validated message verbatim —
+        # the upstream helper produces user-facing copy.
+        st.error(str(exc) or "We couldn't evaluate the market for these odds.")
         return
-    except Exception as exc:  # pragma: no cover — defensive
-        st.error(f"Couldn't evaluate market: {exc!s}")
+    except Exception:
+        # Calm, plain-language error.  No raw exception text / stack
+        # trace leaks to the user.  The full traceback stays in the
+        # server logs.
+        st.error(
+            "We couldn't evaluate the market for these odds. "
+            "Double-check the prices and try again."
+        )
         return
 
     # Stitch market fields onto the prediction so the existing
