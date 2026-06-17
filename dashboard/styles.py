@@ -70,6 +70,56 @@ _CSS = """
   border-radius: 14px;
   background: #ffffff;
 }
+
+/* ------------------------------------------------------------------ */
+/* Phase 4 — Bets view styles                                          */
+/* ------------------------------------------------------------------ */
+
+/* "Most Likely Result" headline — neutral, large, dark text. Sits
+   inside its own div so we can theme the surrounding card without
+   touching the inline font-size. The visual emphasis is from font
+   weight + size only — no coloured background, no icon. */
+.wc-mlr-headline {
+  margin-top: 2px;
+  margin-bottom: 2px;
+  font-family: inherit;
+}
+
+/* "Best Value" green block. The inline style sets the colour; this
+   rule only guards the surrounding margins. */
+.wc-best-value {
+  margin-top: 8px !important;
+  margin-bottom: 6px !important;
+  font-family: inherit;
+  line-height: 1.3;
+}
+
+/* "No Clear Value" grey badge. The inline style sets the colour; this
+   rule only guards the surrounding margins. */
+.wc-no-value-badge {
+  margin-top: 8px !important;
+  margin-bottom: 6px !important;
+  font-family: inherit;
+  line-height: 1.2;
+}
+
+/* Edge readout line — neutral, smaller than the value block. */
+.wc-edge {
+  margin-top: 2px;
+  margin-bottom: 6px;
+  font-family: inherit;
+}
+
+/* Make every primary-styled button meet the iOS / Material 48px
+   minimum-touch-target on mobile.  Streamlit's default ``primary``
+   button is shorter than that on desktop; this rule raises the
+   floor without changing the desktop look. */
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="baseButton-primary"] {
+  min-height: 48px !important;
+  font-size: 1.05em !important;
+  font-weight: 600 !important;
+}
 """
 
 

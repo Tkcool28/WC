@@ -137,18 +137,46 @@ def test_app_renders_predictions_view_by_default() -> None:
 
 
 def test_app_renders_bets_view_via_query_param() -> None:
-    """``?view=bets`` lands on the Bets stub with the legacy Manual form."""
+    """``?view=bets`` lands on the real Phase 4 Bets renderer.
+
+    Phase 2 shipped this as a stub that delegated to the legacy Manual
+    form. Phase 4 replaces the stub with a real mobile-first,
+    odds-gated Bets experience:
+
+      * Date picker + a single primary **"Show Bets"** button
+      * One Bets card per matchup with three odds inputs and a
+        **"Check Betting Value"** button
+      * A closed-by-default **"Advanced settings"** expander that
+        hides the ``min_edge`` slider
+      * A closed-by-default **"Custom bet"** expander for non-2026
+        fixtures
+
+    We assert all of these here, plus that the legacy "Run Analysis"
+    button (Phase 1 / 2 manual flow) is gone.
+    """
     at = AppTest.from_file(str(_DASHBOARD_APP), default_timeout=60)
     at.query_params["view"] = "bets"
     at.run()
     assert not at.exception, f"app raised in bets view: {at.exception}"
-    captions = [c.value for c in at.caption]
-    assert any("Bets" in (c or "") and "Phase 4" in (c or "") for c in captions), (
-        f"Bets stub caption missing; got: {captions!r}"
-    )
+    # Single primary "Show Bets" button is present.
     button_texts = [b.label for b in at.button]
-    assert any("Run Analysis" in (t or "") for t in button_texts), (
-        f"Manual 'Run Analysis' button missing; got: {button_texts!r}"
+    assert any("Show Bets" in (t or "") for t in button_texts), (
+        f"Phase 4 'Show Bets' button missing; got: {button_texts!r}"
+    )
+    # Legacy "Run Analysis" button (Phase 1 / 2 manual form) is gone.
+    assert not any("Run Analysis" in (t or "") for t in button_texts), (
+        f"Legacy 'Run Analysis' button leaked into Bets view: "
+        f"{button_texts!r}"
+    )
+    # Both the Advanced settings and Custom bet expanders are present.
+    expander_labels = [e.label or "" for e in at.expander]
+    assert any("Advanced settings" in t for t in expander_labels), (
+        f"'Advanced settings' expander missing from Bets view: "
+        f"{expander_labels!r}"
+    )
+    assert any("Custom bet" in t for t in expander_labels), (
+        f"'Custom bet' expander missing from Bets view: "
+        f"{expander_labels!r}"
     )
 
 

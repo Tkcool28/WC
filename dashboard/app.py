@@ -97,6 +97,7 @@ from dashboard.session_state import (  # noqa: E402
 )
 from dashboard.styles import inject_css as _inject_css  # noqa: E402
 from dashboard.prediction_card import render_prediction_card as _render_prediction_card  # noqa: E402
+from dashboard.bet_card import render_bet_card as _render_bet_card  # noqa: E402
 from dashboard.text_format import (  # noqa: E402
     format_group_label as _format_group_label,
     format_matchday_label as _format_matchday_label,
@@ -1791,16 +1792,479 @@ def _render_custom_matchup_expander(
 def _render_bets_view(
     corpus: list[dict], name_to_id: dict[str, int], elo_snapshots: dict
 ) -> None:
-    """Stub for the 💰 Bets view (real renderer lands in Phase 4).
+    """Real Phase 4 Bets renderer (mobile-first, odds-gated).
 
-    Phase 2 keeps the legacy Manual-entry body reachable from here so
-    end-to-end behavior is preserved during Phase 2 testing.
+    Flow:
+
+      1. Date picker bound to :data:`KEYS.SELECTED_DATE`.
+      2. ONE large primary button **"💰 Show Bets"**.
+      3. On click: load the day's unplayed matches, build a single
+         pi-ratings snapshot for the date, and render one Bets card
+         per game via :func:`dashboard.bet_card.render_bet_card`.
+      4. Empty-state copy when there are no matches on the chosen date.
+      5. A closed-by-default **"Advanced settings"** expander with the
+         ``min_edge`` slider (out of casual sight by default).
+      6. A closed-by-default **"Custom bet"** expander at the bottom
+         for non-2026 fixtures — user types (home, away, date,
+         home/draw/away odds) and gets one Bets card with the result.
+
+    Hard constraints (Phase 4 brief):
+
+    * Odds are ONLY in Bets. Predictions view does NOT see odds.
+    * ``min_edge`` lives in an **Advanced settings** expander
+      (closed by default).
+    * One game's invalid odds must NOT disrupt other games — the
+      error stays in the offending card.
+    * "No Clear Value" must be visually distinct from a real
+      best-value pick.
+    * "Most Likely Result" and "Best Value Play" are visually
+      distinct (different style + size + icon).
+    * Draw as best value uses **"Match to End in a Draw"** wording.
+    * Empty placeholder examples MUST NOT look like real entered
+      data — placeholders only, no default values.
+
+    The Bets view reuses the cached predictions from the Predictions
+    view (stored under :data:`KEYS.PREDICTIONS_BY_MATCH`) when a
+    shared SELECTED_DATE was loaded by the Predictions view. When the
+    user lands directly on Bets, the view re-derives predictions for
+    the picked date on click.
     """
-    st.caption(
-        "💰 Bets — model + book odds + edge. Real renderer lands in Phase 4. "
-        "Legacy Manual entry flow below is kept as a stub during Phase 2."
+    # Register the data handles the cache helper uses (mirrors the
+    # Predictions view so the same ``_predict_match_cached`` is used).
+    _corpus_id = id(corpus)
+    _elo_id = id(elo_snapshots)
+    _CORPUS_BY_ID[_corpus_id] = corpus
+    _ELO_BY_ID[_elo_id] = elo_snapshots
+
+    # ---- (1) date picker ---- #
+    picked_date = st.date_input(
+        "Match date",
+        value=DEFAULT_TODAY,
+        format="YYYY-MM-DD",
+        key=KEYS.SELECTED_DATE,
     )
-    _render_legacy_manual(corpus, name_to_id, elo_snapshots)
+    picked_iso = (
+        picked_date.isoformat()
+        if hasattr(picked_date, "isoformat")
+        else str(picked_date)
+    )
+
+    # ---- (2) single primary button ---- #
+    show_clicked = st.button(
+        "💰 Show Bets",
+        key="bets_show_btn",
+        type="primary",
+        use_container_width=True,
+    )
+
+    # ---- (3) advanced settings expander (closed by default) ---- #
+    with st.expander("⚙️ Advanced settings", expanded=False):
+        st.caption(
+            "These settings apply to all games on the date above. "
+            "Most users don't need to change them."
+        )
+        # Slider is in points (0..15) so it reads as an integer, but
+        # we store the fractional value in session state under
+        # ``KEYS.BETS_MIN_EDGE`` (e.g. 0.03) so the
+        # ``evaluate_market(..., min_edge=...)`` call gets a clean
+        # 0..1 number.
+        min_edge_pct = st.slider(
+            "Minimum edge for value plays (%)",
+            min_value=0,
+            max_value=15,
+            value=3,
+            step=1,
+            key="bets_min_edge_pct",
+            help=(
+                "Markets where the model's probability exceeds the "
+                "no-vig book probability by at least this much are "
+                "flagged as value plays. Default 3%."
+            ),
+        )
+        _ss_set(KEYS.BETS_MIN_EDGE, min_edge_pct / 100.0)
+
+    # ---- (4) determine which (date, matches, predictions) to render ---- #
+    # We mirror the Predictions view's caching strategy so tab
+    # switches don't blow away the user's work: keyed on the picked
+    # date, refreshed when the user explicitly clicks the primary
+    # button or when the date changes and no cache exists.
+    loaded_date = _ss_get(KEYS.LOADED_MATCHES + ".date", default=None)
+    needs_load = show_clicked or (
+        loaded_date != picked_iso
+        and _ss_get(KEYS.LOADED_MATCHES) is None
+    )
+
+    if needs_load:
+        with st.spinner("Loading matches and building predictions…"):
+            matches = _load_unplayed_for_date(picked_iso)
+            cutoff_iso = picked_iso + "T23:59:59Z"
+            try:
+                ratings = get_ratings(cutoff_iso, corpus)
+            except Exception:
+                ratings = get_ratings(picked_iso + "T00:00:00Z", corpus)
+            predictions: dict[int, dict] = {}
+            ratings_id = id(ratings)
+            for m in matches:
+                mid = m.get("match_id")
+                if mid is None:
+                    continue
+                home = m.get("home_team_name") or "Home"
+                away = m.get("away_team_name") or "Away"
+                home_id = m.get("home_team_id")
+                away_id = m.get("away_team_id")
+                if home_id is None or away_id is None:
+                    continue
+                match_cutoff = picked_iso + "T00:00:00Z"
+                try:
+                    pred = _predict_match_cached(
+                        home_team=home,
+                        away_team=away,
+                        home_team_id=int(home_id),
+                        away_team_id=int(away_id),
+                        date_iso=match_cutoff,
+                        _ratings_id=ratings_id,
+                        _elo_snapshots_id=_elo_id,
+                        _corpus_id=_corpus_id,
+                    )
+                except Exception as exc:
+                    # Don't take down the whole view for one bad row.
+                    pred = {
+                        "home_team": home,
+                        "away_team": away,
+                        "home_team_id": int(home_id),
+                        "away_team_id": int(away_id),
+                        "date": picked_iso,
+                        "pi_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+                        "blend_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+                        "pi_only_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+                        "elo_only_probs": None,
+                        "blend_was_used": False,
+                        "confidence": {
+                            "tier": "C",
+                            "tier_description": "Limited data",
+                            "warnings": [f"prediction error: {exc!s}"],
+                        },
+                        "banner": "Limited data",
+                        "canonical_home_id": m.get("canonical_home_id") or "",
+                        "canonical_away_id": m.get("canonical_away_id") or "",
+                        "identity_warnings": [],
+                    }
+                pred["_match_meta"] = {
+                    "group": m.get("group", ""),
+                    "stage": m.get("stage", ""),
+                    "matchday": m.get("matchday"),
+                    "kickoff_iso": m.get("kickoff_iso") or picked_iso,
+                }
+                predictions[int(mid)] = pred
+            _ss_set(KEYS.LOADED_MATCHES, matches)
+            _ss_set(KEYS.LOADED_MATCHES + ".date", picked_iso)
+            _ss_set(KEYS.PREDICTIONS_BY_MATCH, predictions)
+            # Reset the per-match market cache — the user may have
+            # been on a different date last time.
+            _ss_set(KEYS.MARKET_BY_MATCH, {})
+
+    matches = _ss_get(KEYS.LOADED_MATCHES, default=[]) or []
+    predictions = _ss_get(KEYS.PREDICTIONS_BY_MATCH, default={}) or {}
+
+    # ---- (5) heading + empty state ---- #
+    st.subheader(f"📅 {picked_iso}")
+    if not matches:
+        st.markdown(
+            f"**No matches on {picked_iso}.**\n\n"
+            "_Pick another date above, or use the **Custom bet** expander "
+            "at the bottom to evaluate any game._"
+        )
+        _render_custom_bet_expander(
+            corpus=corpus,
+            name_to_id=name_to_id,
+            elo_snapshots=elo_snapshots,
+        )
+        return
+
+    st.caption(
+        f"{len(matches)} game{'s' if len(matches) != 1 else ''} on {picked_iso} — "
+        "enter the sportsbook odds for any game, then tap **Check Betting Value**."
+    )
+
+    # ---- (6) render one Bets card per match ---- #
+    for m in matches:
+        mid = m.get("match_id")
+        pred = predictions.get(int(mid)) if mid is not None else None
+        if not pred:
+            continue
+        # mid is guaranteed non-None when pred is truthy (predictions
+        # are keyed by int(mid) in the dict above). The cast through
+        # str() keeps Pyright happy without changing runtime behaviour.
+        with st.container(border=True):
+            _render_bet_card(
+                match_meta=pred.get("_match_meta") or {},
+                prediction=pred,
+                key_prefix=f"bets_{int(mid) if mid is not None else 0}",
+            )
+
+    # ---- (7) custom bet expander (bottom of the page) ---- #
+    _render_custom_bet_expander(
+        corpus=corpus,
+        name_to_id=name_to_id,
+        elo_snapshots=elo_snapshots,
+    )
+
+
+def _render_custom_bet_expander(
+    corpus: list[dict],
+    name_to_id: dict[str, int],
+    elo_snapshots: dict,
+) -> None:
+    """Custom-bet expander at the bottom of the 💰 Bets view.
+
+    The user types a (home, away, date) triple plus American odds
+    for the three markets, taps the primary button, and gets one
+    Bets card with the result. Useful for non-2026 fixtures or for
+    testing the value engine against an old line.
+
+    Errors stay local — a bad team name / bad odds does not leak
+    outside the expander.
+    """
+    with st.expander("➕ Custom bet", expanded=False):
+        c1, c2 = st.columns(2)
+        home_name = c1.text_input(
+            "Home team",
+            value="",
+            placeholder="e.g. Argentina",
+            key=KEYS.CUSTOM_HOME,
+        )
+        away_name = c2.text_input(
+            "Away team",
+            value="",
+            placeholder="e.g. Brazil",
+            key=KEYS.CUSTOM_AWAY,
+        )
+        match_date = st.date_input(
+            "Match date",
+            value=DEFAULT_TODAY,
+            format="YYYY-MM-DD",
+            key=KEYS.CUSTOM_DATE,
+        )
+        st.markdown("**Sportsbook odds (American format)**")
+        o1, o2, o3 = st.columns(3)
+        home_odds_txt = o1.text_input(
+            "Home odds",
+            value="",
+            placeholder="e.g. -230",
+            key=KEYS.CUSTOM_HOME_ODDS,
+        )
+        draw_odds_txt = o2.text_input(
+            "Draw odds",
+            value="",
+            placeholder="e.g. +350",
+            key=KEYS.CUSTOM_DRAW_ODDS,
+        )
+        away_odds_txt = o3.text_input(
+            "Away odds",
+            value="",
+            placeholder="e.g. +550",
+            key=KEYS.CUSTOM_AWAY_ODDS,
+        )
+
+        run_clicked = st.button(
+            "💰 Check Betting Value",
+            key="bets_custom_run_btn",
+            type="primary",
+            use_container_width=True,
+        )
+
+        if not run_clicked:
+            st.caption(
+                "_Enter two teams, a date, and the three book odds, then tap "
+                "**Check Betting Value**._"
+            )
+            return
+
+        h = (home_name or "").strip()
+        a = (away_name or "").strip()
+        if not h or not a:
+            st.error("Please enter both a home team and an away team.")
+            return
+        if h.lower() == a.lower():
+            st.error("Home and away teams must be different.")
+            return
+
+        h_id = name_to_id.get(h)
+        a_id = name_to_id.get(a)
+        if h_id is None:
+            st.error(
+                f"Team '{h}' not found in training data. "
+                "Try a different spelling (e.g., 'United States' not 'USA')."
+            )
+            return
+        if a_id is None:
+            st.error(
+                f"Team '{a}' not found in training data. "
+                "Try a different spelling (e.g., 'United States' not 'USA')."
+            )
+            return
+
+        # Validate odds locally — same rules as the per-card inputs.
+        from dashboard.bet_card import _validate_odds_text
+
+        values, err = _validate_odds_text(
+            home_odds_txt, draw_odds_txt, away_odds_txt
+        )
+        if err is not None:
+            st.error(err)
+            return
+        h_f, d_f, a_f = values  # type: ignore[misc]
+
+        cutoff_iso = match_date.isoformat() + "T00:00:00Z"
+        try:
+            ratings = get_ratings(cutoff_iso, corpus)
+        except Exception:
+            ratings = {}
+        if not ratings:
+            st.error(
+                f"No ratings available for cutoff {cutoff_iso}. "
+                "Try an earlier date."
+            )
+            return
+
+        home_elo = away_elo = None
+        if elo_snapshots:
+            home_elo, _ = elo_at(elo_snapshots, h, cutoff_iso)
+            away_elo, _ = elo_at(elo_snapshots, a, cutoff_iso)
+
+        try:
+            prediction = predict_match(
+                home_team=h,
+                away_team=a,
+                home_team_id=int(h_id),
+                away_team_id=int(a_id),
+                date=match_date.isoformat(),
+                ratings=ratings,
+                home_elo=home_elo,
+                away_elo=away_elo,
+            )
+        except Exception as exc:
+            st.error(f"Prediction failed: {exc!s}")
+            return
+
+        # Build a synthetic market so the card has all three odds on
+        # hand. We seed the text-input keys with the user's values
+        # so a re-render of the card (rare) keeps them.
+        st.session_state["custom_bet_card_home_odds"] = home_odds_txt
+        st.session_state["custom_bet_card_draw_odds"] = draw_odds_txt
+        st.session_state["custom_bet_card_away_odds"] = away_odds_txt
+
+        # Pre-stash the result so the card renders it on the first
+        # pass without requiring a click. This keeps the custom-bet
+        # experience "one tap" instead of "two taps".
+        try:
+            from soccer_ev_model.ev_workflow import evaluate_market
+
+            market = evaluate_market(
+                prediction,
+                book_home_odds=h_f,
+                book_draw_odds=d_f,
+                book_away_odds=a_f,
+                min_edge=float(
+                    _ss_get(KEYS.BETS_MIN_EDGE, 0.03) or 0.03
+                ),
+            )
+            combined = {**prediction, **market}
+            from dashboard.ux_presenters import value_play
+
+            best = value_play(
+                combined, min_edge=float(
+                    _ss_get(KEYS.BETS_MIN_EDGE, 0.03) or 0.03
+                )
+            )
+        except Exception as exc:
+            st.error(f"Couldn't evaluate market: {exc!s}")
+            return
+
+        # Render the Most Likely Result + Best Value blocks inline so
+        # the user doesn't need to scroll back to the card (the card
+        # would re-render empty because of the text-input state we
+        # set above). The same text blocks the per-game card uses.
+        from dashboard.bet_card import (
+            _render_best_value,
+            _render_no_clear_value,
+        )
+        from dashboard.prediction_card import (
+            _extract_most_likely,
+            _format_probability,
+            _outcome_headline_text,
+        )
+        from dashboard.text_format import format_team_matchup
+
+        st.markdown(
+            f"### {format_team_matchup(prediction.get('home_team', h), prediction.get('away_team', a))}"
+        )
+        mlr_key = _extract_most_likely(prediction)
+        mlr_text = _outcome_headline_text(mlr_key, prediction)
+        p_top = (
+            (prediction.get("blend_probs") or prediction.get("pi_probs") or {}).get(mlr_key)
+        )
+        st.markdown("**Most Likely Result**")
+        headline_html = (
+            mlr_text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        st.markdown(
+            f"<div style='font-size:1.3em; font-weight:600;'>"
+            f"{headline_html}</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(f"{_format_probability(p_top)} model probability")
+
+        if best.get("status") == "play":
+            market_label = {
+                "home": prediction.get("home_team", "Home"),
+                "draw": "Match to End in a Draw",
+                "away": prediction.get("away_team", "Away"),
+            }.get(best.get("market", ""), "TBD")
+            _render_best_value(market_label, best.get("odds"))
+            edge = float(best.get("edge", 0.0))
+            st.markdown(
+                f"<div style='font-size:1em; color:#495057;'>"
+                f"Edge: <strong>{edge * 100:+.1f}%</strong>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            try:
+                from dashboard.ux_presenters import (
+                    value_confidence_label,
+                    value_why_text,
+                )
+                st.caption(
+                    f"Value confidence: {value_confidence_label(best, combined)}"
+                )
+            except Exception:
+                pass
+            if best.get("market") != mlr_key:
+                st.info(
+                    f"ℹ️ The model expects {mlr_text}, but the best value is "
+                    f"on {market_label}."
+                )
+            try:
+                from dashboard.ux_presenters import value_why_text
+                why_text = value_why_text(best, combined)
+            except Exception:
+                why_text = "The sportsbook price implies a different probability than the model."
+            with st.popover("❓ Why is this value?", use_container_width=False):
+                st.markdown(why_text)
+        else:
+            _render_no_clear_value()
+            st.caption(
+                "Value confidence: Low (no outcome cleared the edge threshold)"
+            )
+            with st.popover("❓ Why no value?", use_container_width=False):
+                st.markdown(
+                    "No outcome offers enough value at the entered odds. "
+                    "Try a different line, or lower the minimum-edge slider "
+                    "in Advanced settings."
+                )
 
 
 def _render_analysis_view(
