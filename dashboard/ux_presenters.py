@@ -351,7 +351,20 @@ def value_why_text(value_play_result: dict, result: dict) -> str:
     is_favorite = market == top
 
     if not is_favorite and edge > 0:
-        return "The favorite is most likely to win, but its price is too expensive"
+        # Neutral wording that works whether the predicted favorite is a
+        # team (home/away) or a draw.  The previous copy ("The favorite
+        # is most likely to win") was misleading when the model's top
+        # outcome was a draw, because a draw does not "win" — see PR #8
+        # review thread 3430230185.
+        if top == "draw":
+            return (
+                "A draw is the most likely result, but this outcome "
+                "offers better value at the current odds"
+            )
+        return (
+            "The predicted winner is most likely, but its price is too "
+            "expensive"
+        )
 
     if multi_model and agreement == "agree" and edge > 0:
         return "Multiple prediction methods support this opportunity"

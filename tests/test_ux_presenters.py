@@ -1314,3 +1314,202 @@ class TestIdentityWarningsAboveCasualTabs:
                     f"Raw code token {token!r} leaked into casual "
                     f"rendered warning {entry!r}"
                 )
+
+
+# --------------------------------------------------------------------------- #
+# value_why_text — neutral wording for draw-leading predictions (PR #8)
+# --------------------------------------------------------------------------- #
+# Regression coverage for review thread 3430230185 on PR #8.
+#
+# Bug: when the model's most-likely outcome was a draw but the best value
+# play was a team, ``value_why_text`` returned
+#   "The favorite is most likely to win, but its price is too expensive"
+# which is incorrect — a draw does not "win".
+#
+# After the fix:
+#   * The returned text must never contain "most likely to win" when the
+#     top outcome is a draw.
+#   * Draw-leading + team-value plays must produce neutral or draw-specific
+#     wording (e.g. mentioning "draw" or "this outcome offers better value").
+#   * Home-leading and away-leading cases still produce sensible wording
+#     that does not regress.
+#   * Prediction vs Betting Value independence is preserved.
+class TestValueWhyTextDrawWording:
+    def test_draw_leading_team_value_play_does_not_say_most_likely_to_win(self):
+        # Draw is the most-likely outcome; value play is on home.
+        r = _result(
+            blend={"home": 0.25, "draw": 0.45, "away": 0.30},
+            calibrated_pi={"home": 0.25, "draw": 0.45, "away": 0.30},
+            book_fair={"home": 0.18, "draw": 0.45, "away": 0.37},
+            edges={"home": 0.07, "draw": 0.0, "away": -0.07},
+            plus_ev_flags=[
+                {
+                    "market": "home",
+                    "edge": 0.07,
+                    "calibrated_pi": 0.25,
+                    "book_fair": 0.18,
+                }
+            ],
+        )
+        vp = value_play(r, min_edge=0.03)
+        assert vp["status"] == "play"
+        assert vp["market"] == "home"
+        out = value_why_text(vp, r)
+        assert "most likely to win" not in out.lower(), (
+            "Draw-leading value wording must not claim 'most likely to win'; "
+            f"got: {out!r}"
+        )
+
+    def test_draw_leading_team_value_play_uses_neutral_or_draw_wording(self):
+        # Draw is the most-likely outcome; value play is on away.
+        # The returned text must reference draw OR use neutral
+        # "better value" framing — and must not regress into the old
+        # "the favorite is most likely to win" copy.
+        r = _result(
+            blend={"home": 0.30, "draw": 0.40, "away": 0.30},
+            calibrated_pi={"home": 0.30, "draw": 0.40, "away": 0.30},
+            book_fair={"home": 0.34, "draw": 0.40, "away": 0.24},
+            edges={"home": -0.04, "draw": 0.0, "away": 0.06},
+            plus_ev_flags=[
+                {
+                    "market": "away",
+                    "edge": 0.06,
+                    "calibrated_pi": 0.30,
+                    "book_fair": 0.24,
+                }
+            ],
+        )
+        vp = value_play(r, min_edge=0.03)
+        assert vp["status"] == "play"
+        assert vp["market"] == "away"
+        out = value_why_text(vp, r)
+        out_l = out.lower()
+        # Old buggy copy must be gone.
+        assert "most likely to win" not in out_l
+        # Neutral draw-aware wording is present.
+        assert "draw" in out_l or "better value" in out_l, (
+            "Draw-leading wording must reference 'draw' or 'better value'; "
+            f"got: {out!r}"
+        )
+
+    def test_home_leading_draw_value_play_still_sensible(self):
+        # Home is the most-likely outcome; value play is on draw.
+        # Wording must still mention "price is too expensive" — the
+        # existing test_favorite_too_expensive contract is preserved.
+        r = _result(
+            blend={"home": 0.55, "draw": 0.30, "away": 0.15},
+            calibrated_pi={"home": 0.55, "draw": 0.30, "away": 0.15},
+            book_fair={"home": 0.55, "draw": 0.22, "away": 0.23},
+            edges={"home": 0.00, "draw": 0.08, "away": -0.08},
+            plus_ev_flags=[
+                {
+                    "market": "draw",
+                    "edge": 0.08,
+                    "calibrated_pi": 0.30,
+                    "book_fair": 0.22,
+                }
+            ],
+        )
+        vp = value_play(r, min_edge=0.03)
+        assert vp["status"] == "play"
+        assert vp["market"] == "draw"
+        out = value_why_text(vp, r)
+        assert "price is too expensive" in out.lower()
+        # And no regression into draw-specific copy (this case has a
+        # team — not a draw — as the top outcome).
+        assert "a draw is the most likely result" not in out.lower()
+
+    def test_away_leading_home_value_play_still_sensible(self):
+        # Away is the most-likely outcome; value play is on home.
+        # Wording must still mention "price is too expensive".
+        r = _result(
+            blend={"home": 0.20, "draw": 0.25, "away": 0.55},
+            calibrated_pi={"home": 0.20, "draw": 0.25, "away": 0.55},
+            book_fair={"home": 0.13, "draw": 0.25, "away": 0.55},
+            edges={"home": 0.07, "draw": 0.00, "away": 0.00},
+            plus_ev_flags=[
+                {
+                    "market": "home",
+                    "edge": 0.07,
+                    "calibrated_pi": 0.20,
+                    "book_fair": 0.13,
+                }
+            ],
+        )
+        vp = value_play(r, min_edge=0.03)
+        assert vp["status"] == "play"
+        assert vp["market"] == "home"
+        out = value_why_text(vp, r)
+        assert "price is too expensive" in out.lower()
+        # Away is the predicted winner — wording must reflect that
+        # without the misleading "draw" framing.
+        assert "a draw is the most likely result" not in out.lower()
+
+    def test_draw_leading_prediction_value_outputs_remain_independent(self):
+        # Draw is the predicted favorite AND the value play is also on
+        # draw at a different price — the favorite case must not be
+        # triggered because market == top.  This proves the Prediction
+        # (most_likely_result) and Betting Value (value_play) outputs
+        # are still independent concerns even after the wording fix.
+        r = _result(
+            blend={"home": 0.25, "draw": 0.50, "away": 0.25},
+            calibrated_pi={"home": 0.25, "draw": 0.50, "away": 0.25},
+            book_fair={"home": 0.25, "draw": 0.42, "away": 0.33},
+            edges={"home": 0.00, "draw": 0.08, "away": -0.08},
+            plus_ev_flags=[
+                {
+                    "market": "draw",
+                    "edge": 0.08,
+                    "calibrated_pi": 0.50,
+                    "book_fair": 0.42,
+                }
+            ],
+        )
+        mlr = most_likely_result(r)
+        vp = value_play(r, min_edge=0.03)
+        # Prediction is draw; value play is also on draw — they happen
+        # to coincide, but they are still computed independently.
+        assert mlr["market"] == "draw"
+        assert vp["status"] == "play"
+        assert vp["market"] == "draw"
+        # And the wording must NOT be the "favorite too expensive"
+        # branch — the favorite case requires market != top.
+        out = value_why_text(vp, r)
+        out_l = out.lower()
+        assert "price is too expensive" not in out_l
+        assert "most likely to win" not in out_l
+
+    def test_draw_leading_team_value_wording_does_not_leak_to_other_branches(
+        self,
+    ):
+        # Even with the draw-aware branch in place, a draw-leading +
+        # team-value play must NOT produce a sentence about "the sportsbook
+        # price suggests a lower chance" or "model disagreement" or
+        # "single signal" — it must land on the favorite branch.
+        r = _result(
+            blend={"home": 0.30, "draw": 0.42, "away": 0.28},
+            calibrated_pi={"home": 0.30, "draw": 0.42, "away": 0.28},
+            book_fair={"home": 0.22, "draw": 0.42, "away": 0.36},
+            edges={"home": 0.08, "draw": 0.0, "away": -0.08},
+            plus_ev_flags=[
+                {
+                    "market": "home",
+                    "edge": 0.08,
+                    "calibrated_pi": 0.30,
+                    "book_fair": 0.22,
+                }
+            ],
+        )
+        vp = value_play(r, min_edge=0.03)
+        out = value_why_text(vp, r)
+        # Must land on the favorite (not-favorite) branch.
+        out_l = out.lower()
+        assert "better value" in out_l or "draw" in out_l, (
+            "Draw-leading + team-value play must produce draw-aware "
+            f"or neutral 'better value' wording; got: {out!r}"
+        )
+        # And must not leak into other branches.
+        assert "model disagreement" not in out_l
+        assert "single signal" not in out_l
+        assert "lower chance" not in out_l
+        assert "most likely to win" not in out_l
