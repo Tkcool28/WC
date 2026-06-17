@@ -239,6 +239,16 @@ def test_gap_calculation_symmetric_and_handles_missing():
     assert gap_vs_opponent_pct(100, 0) is None
 
 
+def test_gap_calculation_rejects_zero_and_negative():
+    """<=0 on either side is treated as missing, not as a real value."""
+    assert gap_vs_opponent_pct(0, 400_000_000) is None
+    assert gap_vs_opponent_pct(-1, 400_000_000) is None
+    assert gap_vs_opponent_pct(400_000_000, 0) is None
+    assert gap_vs_opponent_pct(400_000_000, -1) is None
+    # Symmetry: the existing positive case must still work.
+    assert gap_vs_opponent_pct(800_000_000, 400_000_000) == pytest.approx(100.0)
+
+
 def test_get_match_context_fills_gap(fake_manual_dir: Path, monkeypatch):
     """Wire the loader to the fake CSVs and assert the gap propagates."""
     monkeypatch.setattr(ctx_mod, "SQUAD_STRENGTH_PATH", _squad_path(fake_manual_dir))
@@ -253,7 +263,11 @@ def test_get_match_context_fills_gap(fake_manual_dir: Path, monkeypatch):
 
 
 def test_value_tier_thresholds():
-    """Documented thresholds: elite >= 800M, high >= 400M, mid >= 150M, low < 150M."""
+    """Documented thresholds: elite >= 800M, high >= 400M, mid >= 150M, low < 150M.
+
+    Zero and negative inputs are *not* "low" — they are unknown, since
+    the data is effectively missing.
+    """
     assert value_tier(None) == "unknown"
     assert value_tier(1_000_000_000) == "elite"
     assert value_tier(800_000_000) == "elite"
@@ -262,7 +276,24 @@ def test_value_tier_thresholds():
     assert value_tier(399_999_999) == "mid"
     assert value_tier(150_000_000) == "mid"
     assert value_tier(149_999_999) == "low"
-    assert value_tier(0) == "low"
+    assert value_tier(1) == "low"
+    assert value_tier(0) == "unknown"          # zero is missing, not "low"
+    assert value_tier(-100_000_000) == "unknown"  # negative is missing, not "low"
+
+
+def test_value_tier_rejects_zero_negative_and_nonnumeric():
+    """<=0, None, and non-numeric values map to "unknown"."""
+    assert value_tier(0) == "unknown"
+    assert value_tier(-100_000_000) == "unknown"
+    assert value_tier(-1) == "unknown"
+    assert value_tier(None) == "unknown"
+    assert value_tier("not_a_number") == "unknown"
+    assert value_tier("") == "unknown"
+    assert value_tier(True) == "unknown"   # bool must not be coerced
+    assert value_tier(False) == "unknown"
+    # Positive thresholds still work.
+    assert value_tier(800_000_000) == "elite"
+    assert value_tier(1) == "low"
 
 
 def test_format_eur_and_gap():
@@ -339,6 +370,16 @@ _PROTECTED_FILES = [
     "soccer_ev_model/prediction_summary.py",
     "soccer_ev_model/confidence.py",
 ]
+
+# Pinned SHA-256 prefix of the probs dict produced by
+# test_evaluate_match_probs_hash_is_stable_across_runs. Verified
+# 2026-06-17 by running the test against both HEAD and origin/main's
+# soccer_ev_model/ code — both produce the same hash 5f5f5cf0…
+# (i.e. this is the real ground truth, not a model change introduced
+# by this PR). If the model changes (retrain, threshold change,
+# blending weight change, etc.) update BOTH this constant and the
+# commit message.
+EXPECTED_PROBS_HASH_PREFIX = "5f5f5cf0"
 
 
 def _build_dummy_history():
@@ -426,9 +467,16 @@ def test_evaluate_match_probs_hash_is_stable_across_runs():
     )
     probs = result.get("blend_probs") or result["pi_probs"]
     h = hashlib.sha256(json.dumps(probs, sort_keys=True).encode()).hexdigest()
-    # First 12 chars are enough to detect a regression and short enough
-    # to read in a CI log.  If the model changes, this changes.
-    assert h[:12] == h[:12]  # tautology: the assertion is that h is stable
+    # Hard-code the hash prefix so a regression trips this test loudly
+    # instead of silently passing via the tautology `h[:12] == h[:12]`.
+    assert h.startswith(EXPECTED_PROBS_HASH_PREFIX), (
+        f"Probability output drifted. "
+        f"Expected probs hash to start with {EXPECTED_PROBS_HASH_PREFIX!r} "
+        f"(verified 2026-06-17 against HEAD == origin/main's soccer_ev_model/), "
+        f"got {h[:16]!r}. "
+        f"If this change is intentional (model retrain, threshold change), "
+        f"update EXPECTED_PROBS_HASH_PREFIX AND document why in the commit message."
+    )
     # Cross-check: the keys/values match the expected schema.
     assert set(probs.keys()) == {"home", "draw", "away"}
     assert abs(sum(probs.values()) - 1.0) < 1e-6

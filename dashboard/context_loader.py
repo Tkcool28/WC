@@ -230,11 +230,25 @@ def load_team_notes(path: Path | None = None) -> dict[str, list[dict]]:
 # Derived helpers
 # --------------------------------------------------------------------------- #
 
-def value_tier(squad_value_eur: int | None) -> str:
-    """Map a squad market value (EUR) to ``elite/high/mid/low/unknown``."""
+def value_tier(squad_value_eur) -> str:
+    """Map a squad market value (EUR) to ``elite/high/mid/low/unknown``.
+
+    ``unknown`` covers None / non-numeric / zero / negative inputs — we treat
+    those as "missing" rather than as a real low-tier value, so the dashboard
+    never accidentally labels a malformed input as a budget squad.
+    """
     if squad_value_eur is None:
         return "unknown"
-    v = int(squad_value_eur)
+    # bool is a subclass of int in Python, so True/False would otherwise
+    # sneak through int() — reject them explicitly.
+    if isinstance(squad_value_eur, bool):
+        return "unknown"
+    try:
+        v = float(squad_value_eur)
+    except (TypeError, ValueError):
+        return "unknown"
+    if v <= 0:
+        return "unknown"
     for name, threshold in VALUE_TIER_THRESHOLDS:
         if v >= threshold:
             return name
@@ -242,13 +256,18 @@ def value_tier(squad_value_eur: int | None) -> str:
 
 
 def gap_vs_opponent_pct(
-    team_value: int | None,
-    opp_value: int | None,
+    team_value,
+    opp_value,
 ) -> float | None:
-    """Return ``(team - opp) / opp * 100`` if both present, else ``None``."""
+    """Return ``(team - opp) / opp * 100`` if both are positive, else ``None``.
+
+    Missing inputs (None) and non-positive inputs (zero or negative) on
+    *either* side are treated as missing, so we never divide by zero or
+    emit a meaningful percentage from garbage data.
+    """
     if team_value is None or opp_value is None:
         return None
-    if int(opp_value) == 0:
+    if float(team_value) <= 0 or float(opp_value) <= 0:
         return None
     return (float(team_value) - float(opp_value)) / float(opp_value) * 100.0
 
