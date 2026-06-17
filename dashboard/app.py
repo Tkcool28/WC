@@ -102,6 +102,9 @@ from dashboard.text_format import (  # noqa: E402
     format_group_label as _format_group_label,
     format_matchday_label as _format_matchday_label,
 )
+from dashboard.team_resolution import (  # noqa: E402
+    resolve_match_for_prediction as _resolve_match_for_prediction,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -1627,14 +1630,35 @@ def _render_predictions_view(
                     # skip silently, the per-game error surface is the
                     # custom matchup expander below.
                     continue
+                # Translate the schedule's football-data.org ids into
+                # the corpus ids pi-rating expects. Without this, the
+                # team_experience lookup misses and the model produces
+                # a neutral home-draw-away fallback (PR #9 regression).
+                _home_res, _away_res, _id_warnings = _resolve_match_for_prediction(
+                    match=m,
+                    ratings=ratings,
+                    name_to_id=None,  # auto path: rely on the registry
+                )
                 # Per-match cutoff is the start of the picked date.
                 match_cutoff = picked_iso + "T00:00:00Z"
                 try:
                     pred = _predict_match_cached(
                         home_team=home,
                         away_team=away,
-                        home_team_id=int(home_id),
-                        away_team_id=int(away_id),
+                        # corpus_id is None only on identity_unresolved
+                        # fallback (resolved with status='identity_unresolved'
+                        # in extreme edge cases). Use the schedule id
+                        # so pi-rating still produces *something*.
+                        home_team_id=(
+                            int(_home_res.corpus_id)
+                            if _home_res.corpus_id is not None
+                            else int(home_id)
+                        ),
+                        away_team_id=(
+                            int(_away_res.corpus_id)
+                            if _away_res.corpus_id is not None
+                            else int(away_id)
+                        ),
                         date_iso=match_cutoff,
                         _ratings_id=ratings_id,
                         _elo_snapshots_id=_elo_id,
@@ -1659,10 +1683,30 @@ def _render_predictions_view(
                             "warnings": [f"prediction error: {exc!s}"],
                         },
                         "banner": "Limited data",
-                        "canonical_home_id": m.get("canonical_home_id") or "",
-                        "canonical_away_id": m.get("canonical_away_id") or "",
-                        "identity_warnings": [],
+                        "canonical_home_id": (
+                            _home_res.canonical_id or ""
+                        ),
+                        "canonical_away_id": (
+                            _away_res.canonical_id or ""
+                        ),
+                        "identity_warnings": list(_id_warnings),
                     }
+                else:
+                    # Predict_match() always returns canonical_* keys
+                    # (possibly "").  For full path equivalence with
+                    # the legacy evaluate_one_game() flow, also
+                    # surface identity_warnings when the registry
+                    # flagged one or both teams.
+                    if _id_warnings:
+                        pred["identity_warnings"] = list(_id_warnings)
+                    # If predict_match() returned empty canonical IDs
+                    # (e.g. because nothing was passed), fill in the
+                    # values we resolved here.  Non-empty IDs are left
+                    # alone so predict_match's own resolution wins.
+                    if not pred.get("canonical_home_id") and _home_res.canonical_id:
+                        pred["canonical_home_id"] = _home_res.canonical_id
+                    if not pred.get("canonical_away_id") and _away_res.canonical_id:
+                        pred["canonical_away_id"] = _away_res.canonical_id
                 # Surface the source-match metadata so the card can show
                 # the human-readable kickoff / group / stage labels.
                 pred["_match_meta"] = {
@@ -1969,13 +2013,30 @@ def _render_bets_view(
                 away_id = m.get("away_team_id")
                 if home_id is None or away_id is None:
                     continue
+                # Translate the schedule's football-data.org ids into
+                # the corpus ids pi-rating expects. Without this, the
+                # team_experience lookup misses and the model produces
+                # a neutral home-draw-away fallback (PR #9 regression).
+                _home_res, _away_res, _id_warnings = _resolve_match_for_prediction(
+                    match=m,
+                    ratings=ratings,
+                    name_to_id=None,  # auto path: rely on the registry
+                )
                 match_cutoff = picked_iso + "T00:00:00Z"
                 try:
                     pred = _predict_match_cached(
                         home_team=home,
                         away_team=away,
-                        home_team_id=int(home_id),
-                        away_team_id=int(away_id),
+                        home_team_id=(
+                            int(_home_res.corpus_id)
+                            if _home_res.corpus_id is not None
+                            else int(home_id)
+                        ),
+                        away_team_id=(
+                            int(_away_res.corpus_id)
+                            if _away_res.corpus_id is not None
+                            else int(away_id)
+                        ),
                         date_iso=match_cutoff,
                         _ratings_id=ratings_id,
                         _elo_snapshots_id=_elo_id,
@@ -2000,10 +2061,24 @@ def _render_bets_view(
                             "warnings": [f"prediction error: {exc!s}"],
                         },
                         "banner": "Limited data",
-                        "canonical_home_id": m.get("canonical_home_id") or "",
-                        "canonical_away_id": m.get("canonical_away_id") or "",
-                        "identity_warnings": [],
+                        "canonical_home_id": (
+                            _home_res.canonical_id or ""
+                        ),
+                        "canonical_away_id": (
+                            _away_res.canonical_id or ""
+                        ),
+                        "identity_warnings": list(_id_warnings),
                     }
+                else:
+                    # Surface identity warnings + fill in canonical IDs
+                    # if predict_match() returned empty values.  Mirrors
+                    # the legacy evaluate_one_game() contract.
+                    if _id_warnings:
+                        pred["identity_warnings"] = list(_id_warnings)
+                    if not pred.get("canonical_home_id") and _home_res.canonical_id:
+                        pred["canonical_home_id"] = _home_res.canonical_id
+                    if not pred.get("canonical_away_id") and _away_res.canonical_id:
+                        pred["canonical_away_id"] = _away_res.canonical_id
                 pred["_match_meta"] = {
                     "group": m.get("group", ""),
                     "stage": m.get("stage", ""),
@@ -2433,13 +2508,30 @@ def _render_analysis_view(
                 away_id = m.get("away_team_id")
                 if home_id is None or away_id is None:
                     continue
+                # Translate the schedule's football-data.org ids into
+                # the corpus ids pi-rating expects. Without this, the
+                # team_experience lookup misses and the model produces
+                # a neutral home-draw-away fallback (PR #9 regression).
+                _home_res, _away_res, _id_warnings = _resolve_match_for_prediction(
+                    match=m,
+                    ratings=ratings,
+                    name_to_id=None,  # auto path: rely on the registry
+                )
                 match_cutoff = picked_iso + "T00:00:00Z"
                 try:
                     pred = _predict_match_cached(
                         home_team=home,
                         away_team=away,
-                        home_team_id=int(home_id),
-                        away_team_id=int(away_id),
+                        home_team_id=(
+                            int(_home_res.corpus_id)
+                            if _home_res.corpus_id is not None
+                            else int(home_id)
+                        ),
+                        away_team_id=(
+                            int(_away_res.corpus_id)
+                            if _away_res.corpus_id is not None
+                            else int(away_id)
+                        ),
                         date_iso=match_cutoff,
                         _ratings_id=ratings_id,
                         _elo_snapshots_id=_elo_id,
@@ -2465,13 +2557,23 @@ def _render_analysis_view(
                         },
                         "banner": "Limited data",
                         "canonical_home_id": (
-                            m.get("canonical_home_id") or ""
+                            _home_res.canonical_id or ""
                         ),
                         "canonical_away_id": (
-                            m.get("canonical_away_id") or ""
+                            _away_res.canonical_id or ""
                         ),
-                        "identity_warnings": [],
+                        "identity_warnings": list(_id_warnings),
                     }
+                else:
+                    # Surface identity warnings + fill in canonical IDs
+                    # if predict_match() returned empty values.  Mirrors
+                    # the legacy evaluate_one_game() contract.
+                    if _id_warnings:
+                        pred["identity_warnings"] = list(_id_warnings)
+                    if not pred.get("canonical_home_id") and _home_res.canonical_id:
+                        pred["canonical_home_id"] = _home_res.canonical_id
+                    if not pred.get("canonical_away_id") and _away_res.canonical_id:
+                        pred["canonical_away_id"] = _away_res.canonical_id
                 pred["_match_meta"] = {
                     "group": m.get("group", ""),
                     "stage": m.get("stage", ""),
