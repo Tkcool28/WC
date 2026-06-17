@@ -78,8 +78,12 @@ def main() -> int:
         from soccer_ev_model.team_identity import resolve_team
         h_res = resolve_team(name=home)
         a_res = resolve_team(name=away)
-        h_id = h_res.get("football_data_id")
-        a_id = a_res.get("football_data_id")
+        # `resolve_team` returns `corpus_id` (the openfootball integer that
+        # pi-ratings are keyed on), not `football_data_id`. The old key name
+        # always returned None, which made every matchup look like a neutral
+        # Pi prior (40/27/33) and masked the model's real signal.
+        h_id = h_res.get("corpus_id")
+        a_id = a_res.get("corpus_id")
         h_can = h_res.get("canonical_id") or "?"
         a_can = a_res.get("canonical_id") or "?"
         print(f"  Canonical IDs: {h_can} (id={h_id})  vs  {a_can} (id={a_id})")
