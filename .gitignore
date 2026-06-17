@@ -11,3 +11,40 @@ data/processed/
 .env
 .idea/
 .vscode/
+
+# --- VPS disaster-recovery backup: whitelist runtime data files ---
+# Keep bulk data ignored by default, but track the files the dashboard imports.
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+# Re-include the processed/ directory itself so per-file !rules below take effect.
+!data/processed/
+
+!data/raw/matches_2026.json
+!data/raw/elo_ratings.json
+!data/raw/matches_2010_openfootball.json
+!data/raw/matches_2014_openfootball.json
+!data/raw/matches_2018_openfootball.json
+!data/raw/matches_2022_openfootball.json
+!data/raw/matches_1930_openfootball.json
+!data/raw/matches_1934_openfootball.json
+!data/raw/matches_1938_openfootball.json
+!data/raw/matches_1950_openfootball.json
+!data/raw/matches_1954_openfootball.json
+!data/raw/matches_1958_openfootball.json
+!data/raw/matches_1962_openfootball.json
+!data/raw/matches_1966_openfootball.json
+!data/raw/matches_1970_openfootball.json
+!data/raw/matches_1974_openfootball.json
+!data/raw/matches_1978_openfootball.json
+!data/raw/matches_1982_openfootball.json
+!data/raw/matches_1986_openfootball.json
+!data/raw/matches_1990_openfootball.json
+!data/raw/matches_1994_openfootball.json
+!data/raw/matches_1998_openfootball.json
+!data/raw/matches_2002_openfootball.json
+!data/raw/matches_2006_openfootball.json
+!data/processed/international_matches.json
+
+# Explicitly re-block dead data that lives in data/raw/ but is not loaded at runtime
+data/raw/matches_2026_openfootball.json
+data/raw/international_results.csv
