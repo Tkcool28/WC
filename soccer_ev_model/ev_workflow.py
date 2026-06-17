@@ -294,7 +294,10 @@ def evaluate_match(
     # functions continue to work unchanged.
     confidence["identity_unresolved"] = bool(identity_unresolved)
 
-    # Calibrated pi probs
+    # Calibrated pi probs. NOTE: this is consumed ONLY by the +EV flag
+    # pipeline (`plus_ev_flags` below). The dashboard prediction summary
+    # intentionally displays the raw blend (`pi_probs`/`blend_probs`),
+    # not these calibrated values — calibration is an EV-layer concern.
     calibrated_pi = _calibrate_probs(pi, confidence["calibrated_p"])
 
     # Edges (raw pi minus book_fair). This is the +EV signal.
@@ -328,6 +331,10 @@ def evaluate_match(
         },
         "book_fair": {k: round(v, 4) for k, v in book_fair.items()},
         "pi_probs": {k: round(v, 4) for k, v in pi.items()},
+        # Explicit alias: `pi_probs` is the Pi+Elo blend when Elo is supplied,
+        # else pure pi. `blend_probs` is the same dict under a clearer name.
+        # Both keys are kept for backward compatibility with existing readers.
+        "blend_probs": {k: round(v, 4) for k, v in pi.items()},
         "pi_only_probs": {k: round(v, 4) for k, v in pi_only.items()},
         "elo_only_probs": {k: round(v, 4) for k, v in elo_only.items()} if elo_only is not None else None,
         "blend_was_used": blend_was_used,

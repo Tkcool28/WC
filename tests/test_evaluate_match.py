@@ -307,3 +307,45 @@ def test_evaluate_match_manual_odds_regression():
               "pi_probs", "calibrated_pi", "edges", "confidence",
               "plus_ev_flags", "banner"):
         assert k in result
+
+
+# ---- evaluate_match: blend_probs alias for clarity ----
+
+
+def test_evaluate_match_blend_probs_alias_present_and_identical():
+    """`blend_probs` is the new explicit alias for the blend (the value
+    historically stored in `pi_probs`). Both keys must exist and contain
+    the same dict."""
+    _train, ratings = _train_ratings()
+    result = evaluate_match(
+        home_team="Team1", away_team="Team2",
+        home_team_id=1, away_team_id=2,
+        date="2020-12-01",
+        book_home_odds=-150, book_draw_odds=300, book_away_odds=400,
+        ratings=ratings,
+    )
+    assert "blend_probs" in result
+    assert "pi_probs" in result
+    assert result["blend_probs"] is not None
+    assert result["pi_probs"] is not None
+    assert result["blend_probs"] == result["pi_probs"]
+    # Shape sanity: home / draw / away
+    assert set(result["blend_probs"].keys()) == {"home", "draw", "away"}
+
+
+def test_evaluate_match_blend_probs_alias_holds_with_elo_too():
+    """When Elo is supplied, `blend_probs` is the actual blend (not pure
+    pi) and still equals `pi_probs`."""
+    _train, ratings = _train_ratings()
+    result = evaluate_match(
+        home_team="Team1", away_team="Team2",
+        home_team_id=1, away_team_id=2,
+        date="2020-12-01",
+        book_home_odds=-150, book_draw_odds=300, book_away_odds=400,
+        ratings=ratings,
+        home_elo=1600, away_elo=1500,
+    )
+    assert result["blend_was_used"] is True
+    assert result["blend_probs"] == result["pi_probs"]
+    # And the blend must actually differ from pi-only when Elo is non-neutral
+    assert result["blend_probs"] != result["pi_only_probs"]

@@ -185,7 +185,9 @@ def _render_warnings(assessment: dict) -> None:
 
 def _render_prob_table(result: dict) -> None:
     """Three-column comparison: model (pi+Elo blend) vs book_fair vs calibrated."""
-    pi = result["pi_probs"]
+    # Prefer the explicit `blend_probs` alias; fall back to `pi_probs` for
+    # backward compatibility with results from older workflow versions.
+    pi = result.get("blend_probs", result["pi_probs"])
     bf = result["book_fair"]
     cp = result["calibrated_pi"]
     ed = result["edges"]
@@ -469,8 +471,12 @@ def _render_game_result(result: dict, min_edge: float) -> None:
     _render_plus_ev_flags(result, min_edge=min_edge)
 
     # --- Prediction summary --- #
+    # This block intentionally uses the RAW blend probabilities
+    # (`blend_probs`, aliased to `pi_probs` for backward compat).
+    # Calibrated values are surfaced separately via the +EV flags,
+    # not in the summary text the user reads first.
     st.subheader("Prediction summary")
-    blended = result["pi_probs"]
+    blended = result.get("blend_probs", result["pi_probs"])
     top, top_p, second, second_p = top_two_outcomes(blended)
     margin = prediction_margin_pct(blended)
     draw_label, draw_p = draw_risk_label(blended["draw"])

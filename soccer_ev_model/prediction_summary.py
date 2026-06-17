@@ -4,6 +4,10 @@ Pure, testable helpers for per-match prediction summaries.
 These functions consume plain dicts/strings/floats — no I/O, no Streamlit,
 no new dependencies.  Called by the dashboard renderer to produce the
 "Prediction summary" block shown below the existing confidence banner.
+
+NOTE: these helpers operate on RAW model probabilities (the blend).
+Calibration is an EV-layer concern (see `ev_workflow.evaluate_match` ->
+`calibrated_pi` -> `plus_ev_flags`) and is NOT applied to the summary.
 """
 from __future__ import annotations
 
