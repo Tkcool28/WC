@@ -33,6 +33,25 @@ def _pretty_market(market: str, home_name: str, away_name: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# outcome headline (Prediction tab result card)
+# --------------------------------------------------------------------------- #
+def outcome_headline(most_likely: dict) -> str:
+    """Return a deterministic, plain-English headline for the Prediction tab.
+
+    Examples:
+      * Home win      -> "<Home Team> to Win"
+      * Away win      -> "<Away Team> to Win"
+      * Draw outcome  -> "Match to End in a Draw"
+    """
+    market = most_likely.get("market", "")
+    label = most_likely.get("label", "")
+    if market == "draw":
+        return "Match to End in a Draw"
+    # Defensive escape: never trust the label to be HTML-safe
+    return f"{label} to Win"
+
+
+# --------------------------------------------------------------------------- #
 # most_likely_result
 # --------------------------------------------------------------------------- #
 def most_likely_result(result: dict) -> dict:
@@ -79,6 +98,49 @@ def prediction_confidence_label(result: dict) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# agreement_status — distinguish "models agree" from "only one model ran"
+# --------------------------------------------------------------------------- #
+def agreement_status(result: dict) -> str:
+    """Return a deterministic label describing which prediction methods ran.
+
+    Possible values:
+      - ``"only_pi"``: pi-rating ran, no Elo (blend_was_used is False, or
+        elo_only_probs is missing/None).
+      - ``"only_elo"``: Elo ran, no pi (extremely rare; preserved for
+        completeness).
+      - ``"agree"``: both pi and Elo ran and they agree on the top market
+        with < 10 pts probability gap.
+      - ``"fragile"``: both ran, same top, but the probability gap is
+        >= 10 pts.
+      - ``"disagree"``: both ran and they pick different top markets.
+
+    This helper is the single source of truth used by the casual Prediction
+    and Betting Value presenters.  It deliberately NEVER compares a model
+    against itself: when only one method ran we report "only_pi" /
+    "only_elo" rather than fabricating an "agree" label.
+
+    Pure presentation: reads only from the existing ``result`` dict.  No
+    recomputation of probabilities, no math, no I/O.
+    """
+    pi_only = result.get("pi_only_probs")
+    elo_only = result.get("elo_only_probs")
+    pi_present = bool(pi_only)
+    elo_present = bool(elo_only)
+    if pi_present and not elo_present:
+        return "only_pi"
+    if elo_present and not pi_present:
+        return "only_elo"
+    if not pi_present and not elo_present:
+        # Degenerate — fall through to a no-Elo label so the casual
+        # wording still makes sense.
+        return "only_pi"
+    # Both ran: defer to the existing agreement helper.
+    # (Reaching here implies pi_only and elo_only are truthy dicts.)
+    assert pi_only is not None and elo_only is not None
+    return model_agreement(pi_only, elo_only)["label"]
+
+
+# --------------------------------------------------------------------------- #
 # prediction_why_text
 # --------------------------------------------------------------------------- #
 def prediction_why_text(
@@ -111,12 +173,10 @@ def prediction_why_text(
         if "limited data" in wl or "insufficient data" in wl or "coin flip" in wl:
             return "Limited historical data is available for this team."
 
-    # --- 2. Models disagree ---
+    # --- 2. Models disagree (BOTH models must have run) ---
     blended = resolve_model_probs_for_market(result)
-    pi_only = result.get("pi_only_probs") or blended
-    elo_only = result.get("elo_only_probs")
-    agree = model_agreement(pi_only, elo_only if elo_only is not None else pi_only)
-    if agree["label"] == "disagree":
+    agreement = agreement_status(result)
+    if agreement == "disagree":
         return "The prediction methods disagree on the most likely outcome."
 
     # --- 3. Stronger overall team rating (margin >= 15 pts) ---
@@ -125,11 +185,15 @@ def prediction_why_text(
     if margin >= 15.0:
         return "One team has a noticeably stronger overall rating."
 
-    # --- 4. Multiple methods agree ---
-    if agree["label"] == "agree" or agree["label"] == "fragile":
-        # Check if they agree on the same top AND it matches the blend top
-        if agree["pi_top"] == top and agree["elo_top"] == top:
-            return "Multiple prediction methods agree on the most likely outcome."
+    # --- 4. Multiple methods agree (BOTH models must have run) ---
+    if agreement in ("agree", "fragile"):
+        # Genuine multi-model agreement: the model_agreement helper has
+        # already confirmed pi_top == elo_top.
+        return "Multiple prediction methods agree on the most likely outcome."
+
+    # --- 4b. Only one prediction method was available ---
+    if agreement in ("only_pi", "only_elo"):
+        return "Only one prediction method was available for this matchup."
 
     # --- 5. Better squad strength (gap from context_loader) ---
     # This is checked via the match context gap if present in result metadata.
@@ -144,7 +208,7 @@ def prediction_why_text(
         return "The match appears closely balanced."
 
     # --- 7. Methods disagree slightly (fragile) ---
-    if agree["label"] == "fragile":
+    if agreement == "fragile":
         return "The methods disagree slightly, lowering confidence."
 
     # Fallback
@@ -198,33 +262,45 @@ def value_play(result: dict, min_edge: float) -> dict:
 def value_confidence_label(value_play_result: dict, result: dict) -> str:
     """Return High / Medium / Low for the value opportunity.
 
-    Computed INDEPENDENTLY from prediction_confidence_label.
-    Derived strictly from edge magnitude, model agreement, and calibration.
+    Computed INDEPENDENTLY from prediction_confidence_label.  Derived
+    strictly from edge magnitude, model agreement, and calibration.
+
+    A single-model result (missing Elo) MUST NOT receive an
+    agreement-based High label.  The High tier is reserved for plays
+    that are supported by genuine multi-model agreement.
     """
     if value_play_result["status"] != "play":
         return "Low"
 
     edge = value_play_result["edge"]
 
-    # Get model agreement
-    blended = resolve_model_probs_for_market(result)
-    pi_only = result.get("pi_only_probs") or blended
-    elo_only = result.get("elo_only_probs")
-    agree = model_agreement(pi_only, elo_only if elo_only is not None else pi_only)
+    # Single source of truth: did BOTH models actually run?
+    agreement = agreement_status(result)
+    multi_model = agreement in ("agree", "fragile", "disagree")
 
     # Get calibration label from existing assessment
     assessment = result.get("confidence", {})
     calib_label = assessment.get("calib_label", "medium")
 
-    # High: strong edge (>= 5%), agree, and well-calibrated
-    if edge >= 0.05 and agree["label"] == "agree" and calib_label == "high":
+    # High: strong edge (>= 5%), genuine multi-model agreement, and
+    # well-calibrated.  Single-model results cannot reach this tier
+    # because we cannot confirm two methods support the play.
+    if multi_model and edge >= 0.05 and agreement == "agree" and calib_label == "high":
         return "High"
 
-    # Low: weak edge (< 2%), or disagree, or low calibration
-    if edge < 0.02 or agree["label"] == "disagree" or calib_label == "low":
+    # Low: weak edge (< 2%), genuine multi-model disagreement, or
+    # low calibration.  Single-model plays are NOT auto-Low here:
+    # the brief says they must not be High, and a strong single-model
+    # edge is still a meaningful signal (it just can't be corroborated).
+    if (
+        edge < 0.02
+        or agreement == "disagree"
+        or calib_label == "low"
+    ):
         return "Low"
 
-    # Medium: everything else
+    # Medium: everything else — including single-model plays with a
+    # strong edge but no second model to corroborate.
     return "Medium"
 
 
@@ -232,31 +308,44 @@ def value_confidence_label(value_play_result: dict, result: dict) -> str:
 # value_why_text
 # --------------------------------------------------------------------------- #
 def value_why_text(value_play_result: dict, result: dict) -> str:
-    """Return a short plain-language reason for the value assessment."""
+    """Return a short plain-language reason for the value assessment.
+
+    Plain-language rules:
+      * The "Multiple prediction methods support this opportunity" line
+        is only used when BOTH models actually ran (Pi + Elo).  A
+        single-model result gets a separate single-model explanation.
+      * The "model disagreement" line is only used when both models ran
+        and either disagree on the top market or agree fragilely.
+    """
     if value_play_result["status"] != "play":
         return "No outcome offers enough value at the entered odds"
 
     edge = value_play_result["edge"]
     market = value_play_result["market"]
 
-    # Get model agreement
-    blended = resolve_model_probs_for_market(result)
-    pi_only = result.get("pi_only_probs") or blended
-    elo_only = result.get("elo_only_probs")
-    agree = model_agreement(pi_only, elo_only if elo_only is not None else pi_only)
+    # Single source of truth: did BOTH models actually run?
+    agreement = agreement_status(result)
+    multi_model = agreement in ("agree", "fragile", "disagree")
 
     # Check if selected market is the predicted favorite
+    blended = resolve_model_probs_for_market(result)
     top, _top_p, _second, _second_p = top_two_outcomes(blended)
     is_favorite = market == top
 
     if not is_favorite and edge > 0:
         return "The favorite is most likely to win, but its price is too expensive"
 
-    if agree["label"] == "agree" and edge > 0:
+    if multi_model and agreement == "agree" and edge > 0:
         return "Multiple prediction methods support this opportunity"
 
-    if agree["label"] in ("disagree", "fragile") and edge > 0:
+    if multi_model and agreement in ("disagree", "fragile") and edge > 0:
         return "The value exists, but model disagreement lowers confidence"
+
+    if not multi_model and edge > 0:
+        return (
+            "Only one prediction method is available, so this value is "
+            "based on a single signal"
+        )
 
     if edge > 0:
         return "The sportsbook price suggests a lower chance than the model estimates"

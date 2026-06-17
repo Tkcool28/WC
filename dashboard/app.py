@@ -75,6 +75,7 @@ from dashboard.ux_presenters import (  # noqa: E402
     analysis_squad_context as _ux_analysis_squad,
     format_odds as _format_odds,
     most_likely_result as _most_likely_result,
+    outcome_headline as _outcome_headline,
     prediction_confidence_label as _prediction_confidence_label,
     prediction_why_text as _prediction_why_text,
     translate_warning as _translate_warning,
@@ -761,7 +762,7 @@ def _render_prediction_tab(result: dict, identity_warnings: list[str]) -> None:
     st.markdown("##### Most Likely Result")
     st.markdown(
         f"<div style='font-size:1.6em; font-weight:600;'>"
-        f"{_escape_note_text(mlr['label'])} to Win"
+        f"{_escape_note_text(_outcome_headline(mlr))}"
         f"</div>",
         unsafe_allow_html=True,
     )

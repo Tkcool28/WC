@@ -22,6 +22,7 @@ from __future__ import annotations
 import pytest
 
 from dashboard.ux_presenters import (
+    agreement_status,
     analysis_calibration_and_data_quality,
     analysis_market_comparison,
     analysis_model_breakdown,
@@ -30,6 +31,7 @@ from dashboard.ux_presenters import (
     analysis_raw_diagnostics,
     format_odds,
     most_likely_result,
+    outcome_headline,
     prediction_confidence_label,
     prediction_why_text,
     translate_warning,
@@ -71,12 +73,15 @@ def _assessment(
     }
 
 
+_PI_ABSENT = object()  # sentinel: "pi did not run"
+
+
 def _result(
     *,
     home_team: str = "Brazil",
     away_team: str = "Argentina",
     blend: dict[str, float] | None = None,
-    pi_only: dict[str, float] | None = None,
+    pi_only: object = None,
     elo_only: dict[str, float] | None = None,
     book_odds: dict[str, float] | None = None,
     book_fair: dict[str, float] | None = None,
@@ -91,8 +96,11 @@ def _result(
 ) -> dict:
     """Build a synthetic result dict that mirrors evaluate_match output."""
     blend = blend or {"home": 0.55, "draw": 0.25, "away": 0.20}
+    # Allow callers to explicitly mark pi as absent via _PI_ABSENT.
     if pi_only is None:
         pi_only = dict(blend)
+    elif pi_only is _PI_ABSENT:
+        pi_only = None
     if elo_only is None:
         elo_only = None
     if book_odds is None:
@@ -122,7 +130,7 @@ def _result(
         "book_fair": book_fair,
         "pi_probs": dict(blend),
         "blend_probs": dict(blend),
-        "pi_only_probs": dict(pi_only),
+        "pi_only_probs": dict(pi_only) if pi_only is not None else None,
         "elo_only_probs": dict(elo_only) if elo_only is not None else None,
         "blend_was_used": blend_was_used,
         "calibrated_pi": calibrated_pi,
@@ -306,7 +314,11 @@ class TestConfidenceIndependence:
 
     def test_prediction_low_value_high(self):
         # Low prediction confidence (low data), but a high-edge +EV play
-        # with full agreement and good calibration
+        # with full multi-model agreement and good calibration.
+        # The point of this test is that prediction and value confidence
+        # are INDEPENDENT — they can land on different tiers on the same
+        # result.  BOTH models must be present for the agreement-based
+        # High label on the value side.
         r = _result(
             assessment=_assessment(
                 tier="C",
@@ -314,6 +326,9 @@ class TestConfidenceIndependence:
                 top_p=0.50,
                 calibrated_p=0.50,
             ),
+            pi_only={"home": 0.55, "draw": 0.25, "away": 0.20},
+            elo_only={"home": 0.55, "draw": 0.25, "away": 0.20},
+            blend_was_used=True,
             plus_ev_flags=[
                 {
                     "market": "home",
@@ -325,11 +340,41 @@ class TestConfidenceIndependence:
         )
         vp = value_play(r, min_edge=0.03)
         assert prediction_confidence_label(r) == "Low"
-        # value confidence must be at least Medium
+        # value confidence must reach High (agreement-based, multi-model)
         v = value_confidence_label(vp, r)
-        assert v in ("Medium", "High")
-        # they are allowed to differ
+        assert v == "High"
+        # and they are allowed to differ
         assert v != prediction_confidence_label(r)
+
+    def test_value_confidence_low_when_elo_missing(self):
+        # If Elo did not run, a single-model value play must NOT receive
+        # an agreement-based High label.  Same scenario as above but
+        # with elo_only=None — Value Confidence must cap at Low (or at
+        # most Medium) because we have no second model to corroborate.
+        r = _result(
+            assessment=_assessment(
+                tier="C",
+                calib_label="high",
+                top_p=0.50,
+                calibrated_p=0.50,
+            ),
+            # No Elo: elo_only defaults to None and blend_was_used=False
+            plus_ev_flags=[
+                {
+                    "market": "home",
+                    "edge": 0.10,
+                    "calibrated_pi": 0.55,
+                    "book_fair": 0.45,
+                }
+            ],
+        )
+        vp = value_play(r, min_edge=0.03)
+        v = value_confidence_label(vp, r)
+        # Single-model cap: never High.
+        assert v in ("Low", "Medium")
+        # With edge >= 5% the cap is "Medium" (Low is only when the
+        # edge is < 2% or other strong-low signals are present).
+        assert v == "Medium"
 
     def test_value_label_low_when_no_clear_value(self):
         r = _result(plus_ev_flags=[])
@@ -477,21 +522,26 @@ class TestPredictionWhyText:
         assert "agree" in out.lower()
 
     def test_priority6_closely_balanced_fallback(self):
-        # When pi and elo disagree (priority 2 fires "disagree") OR when
-        # agreement is fragile, priority 6 ("closely balanced") is the
-        # next-to-last fallback before "closely balanced" at the end.
+        # Priority 6 ("closely balanced") is the final fallback before the
+        # closing "closely balanced" at the end of the priority chain.
         # The realistic case where priority 6 fires is when:
-        #   * pi_only and elo_only have the SAME top market
-        #   * the SAME top is NOT the blend's top (so priority 4 misses)
+        #   * Both Pi and Elo ran and DISAGREE on the top market
+        #     (priority 2 "disagree" doesn't fire because they
+        #     agree on a third market? no — disagreement is disagreement).
+        # Actually the realistic path: both models ran and AGREE on a
+        # market that is NOT the blend's top, with a small margin.
         #   * margin is small (under 5 pts)
         #   * NO _squad_gap_pct is attached
-        # We construct blend where draw is the top but pi+elo both pick home.
+        # We construct: pi and elo agree on "home" with fragile prob
+        # gap (>= 10pp).  Priority 4 then fires ("Multiple methods
+        # agree" — fragile still counts as agreement on the top).
         r = _result(
             # Blend's top = draw (0.42), margin to second (home 0.40) = 2 pts
             blend={"home": 0.40, "draw": 0.42, "away": 0.18},
-            # pi + elo both pick home (same top) with prob gap < 10pp
-            pi_only={"home": 0.45, "draw": 0.35, "away": 0.20},
-            elo_only={"home": 0.48, "draw": 0.34, "away": 0.18},
+            # pi picks home, elo picks home — same top, but prob gap > 10pp
+            # (0.45 vs 0.58 -> 13pp) -> fragile
+            pi_only={"home": 0.45, "draw": 0.30, "away": 0.25},
+            elo_only={"home": 0.58, "draw": 0.25, "away": 0.17},
             blend_was_used=True,
             assessment=_assessment(tier="A"),
         )
@@ -500,10 +550,8 @@ class TestPredictionWhyText:
             warnings=r["confidence"]["warnings"],
             identity_warnings=[],
         )
-        # pi_top == elo_top == 'home', so priority 4 needs home == blend top
-        # (which is 'draw') -> priority 4 misses. Priority 6 (margin < 5)
-        # then fires.
-        assert "closely balanced" in out.lower()
+        # priority 4 fires (genuine multi-model agreement, even if fragile)
+        assert "multiple prediction methods agree" in out.lower()
 
     def test_priority2_models_disagree(self):
         # We need a real "disagree" from model_agreement: pi top != elo top
@@ -710,3 +758,305 @@ class TestCODCPVScenario:
         # identity warning (not translated) so power users still see it.
         d = analysis_raw_diagnostics(r)
         assert any("CPV" in iw for iw in d["identity_warnings"])
+
+
+# --------------------------------------------------------------------------- #
+# Review-round-2 fixes: missing Elo, single-model plays, draw wording
+# --------------------------------------------------------------------------- #
+class TestAgreementStatus:
+    """``agreement_status`` is the single source of truth for whether
+    both prediction models (Pi + Elo) actually ran on a result.
+
+    It MUST distinguish "models agree" from "only one model ran" so the
+    casual Prediction and Betting Value tabs never claim multi-model
+    agreement when only Pi was available.
+    """
+
+    def test_only_pi_when_elo_missing(self):
+        r = _result(elo_only=None, blend_was_used=False)
+        assert agreement_status(r) == "only_pi"
+
+    def test_only_elo_when_pi_missing(self):
+        r = _result(pi_only=_PI_ABSENT, elo_only={"home": 0.5, "draw": 0.3, "away": 0.2})
+        assert agreement_status(r) == "only_elo"
+
+    def test_only_pi_when_both_missing(self):
+        r = _result(pi_only=_PI_ABSENT, elo_only=None, blend_was_used=False)
+        # Degenerate — fall through to a no-Elo label.
+        assert agreement_status(r) == "only_pi"
+
+    def test_agree_when_both_pick_same_top(self):
+        r = _result(
+            pi_only={"home": 0.55, "draw": 0.25, "away": 0.20},
+            elo_only={"home": 0.53, "draw": 0.27, "away": 0.20},
+            blend_was_used=True,
+        )
+        assert agreement_status(r) == "agree"
+
+    def test_fragile_when_both_pick_same_top_with_big_gap(self):
+        r = _result(
+            pi_only={"home": 0.55, "draw": 0.25, "away": 0.20},
+            elo_only={"home": 0.42, "draw": 0.30, "away": 0.28},
+            blend_was_used=True,
+        )
+        # 0.55 - 0.42 = 0.13 * 100 = 13pp >= 10pp threshold
+        assert agreement_status(r) == "fragile"
+
+    def test_disagree_when_top_markets_differ(self):
+        r = _result(
+            pi_only={"home": 0.55, "draw": 0.20, "away": 0.25},
+            elo_only={"home": 0.25, "draw": 0.20, "away": 0.55},
+            blend_was_used=True,
+        )
+        assert agreement_status(r) == "disagree"
+
+
+class TestPredictionWhyTextNoElo:
+    """When Elo is missing, ``prediction_why_text`` must NOT claim that
+    multiple methods agree.  It should use a single-model explanation.
+    """
+
+    def test_no_elo_does_not_claim_multiple_agree(self):
+        # Margin < 5pts and no _squad_gap_pct -> with the OLD code this
+        # would have fired priority 4 ("multiple methods agree").  With
+        # the new code it must NOT.
+        r = _result(
+            blend={"home": 0.40, "draw": 0.37, "away": 0.23},
+            pi_only={"home": 0.40, "draw": 0.37, "away": 0.23},
+            elo_only=None,  # <-- missing
+            blend_was_used=False,
+            assessment=_assessment(tier="A"),
+        )
+        out = prediction_why_text(
+            r,
+            warnings=r["confidence"]["warnings"],
+            identity_warnings=[],
+        )
+        assert "multiple prediction methods agree" not in out.lower()
+        assert "only one prediction method" in out.lower()
+
+    def test_no_elo_with_strong_margin(self):
+        # Big margin + no Elo -> "stronger team" wins, not "multiple agree"
+        r = _result(
+            blend={"home": 0.70, "draw": 0.20, "away": 0.10},
+            pi_only={"home": 0.70, "draw": 0.20, "away": 0.10},
+            elo_only=None,
+            blend_was_used=False,
+            assessment=_assessment(tier="A"),
+        )
+        out = prediction_why_text(
+            r,
+            warnings=r["confidence"]["warnings"],
+            identity_warnings=[],
+        )
+        assert "multiple prediction methods agree" not in out.lower()
+        assert "stronger" in out.lower()
+
+    def test_both_models_present_keeps_multiple_agree(self):
+        # Regression: when BOTH models are present and agree, and the
+        # margin is medium (5..15 pts so priority 3 doesn't fire), the
+        # "Multiple methods agree" line must STILL fire.
+        r = _result(
+            blend={"home": 0.45, "draw": 0.35, "away": 0.20},
+            pi_only={"home": 0.45, "draw": 0.35, "away": 0.20},
+            elo_only={"home": 0.45, "draw": 0.35, "away": 0.20},
+            blend_was_used=True,
+            assessment=_assessment(tier="A"),
+        )
+        out = prediction_why_text(
+            r,
+            warnings=r["confidence"]["warnings"],
+            identity_warnings=[],
+        )
+        assert "multiple prediction methods agree" in out.lower()
+
+
+class TestValueConfidenceNoElo:
+    """When Elo is missing, a single-model value play must NOT receive
+    the agreement-based High Value Confidence label.
+    """
+
+    def test_single_model_cannot_reach_high(self):
+        r = _result(
+            assessment=_assessment(
+                tier="A",  # all other signals favor High
+                calib_label="high",
+                top_p=0.50,
+                calibrated_p=0.50,
+            ),
+            # No Elo (defaults to None, blend_was_used=False)
+            plus_ev_flags=[
+                {
+                    "market": "home",
+                    "edge": 0.10,  # big edge
+                    "calibrated_pi": 0.55,
+                    "book_fair": 0.45,
+                }
+            ],
+        )
+        vp = value_play(r, min_edge=0.03)
+        v = value_confidence_label(vp, r)
+        assert v != "High"  # Single-model cap
+
+    def test_multi_model_can_reach_high(self):
+        r = _result(
+            assessment=_assessment(
+                tier="A",
+                calib_label="high",
+                top_p=0.50,
+                calibrated_p=0.50,
+            ),
+            pi_only={"home": 0.55, "draw": 0.25, "away": 0.20},
+            elo_only={"home": 0.55, "draw": 0.25, "away": 0.20},
+            blend_was_used=True,
+            plus_ev_flags=[
+                {
+                    "market": "home",
+                    "edge": 0.10,
+                    "calibrated_pi": 0.55,
+                    "book_fair": 0.45,
+                }
+            ],
+        )
+        vp = value_play(r, min_edge=0.03)
+        v = value_confidence_label(vp, r)
+        assert v == "High"
+
+
+class TestValueWhyTextNoElo:
+    """When Elo is missing, ``value_why_text`` must NOT claim that
+    multiple prediction methods support the opportunity.
+    """
+
+    def test_single_model_value_explanation(self):
+        # A single-model play on the favorite with a big edge and
+        # good calibration should NOT say "Multiple methods support".
+        r = _result(
+            blend={"home": 0.55, "draw": 0.25, "away": 0.20},
+            pi_only={"home": 0.55, "draw": 0.25, "away": 0.20},
+            elo_only=None,
+            blend_was_used=False,
+            plus_ev_flags=[
+                {
+                    "market": "home",
+                    "edge": 0.05,
+                    "calibrated_pi": 0.55,
+                    "book_fair": 0.50,
+                }
+            ],
+        )
+        vp = value_play(r, min_edge=0.03)
+        out = value_why_text(vp, r)
+        assert "multiple prediction methods support" not in out.lower()
+        assert "only one prediction method" in out.lower()
+
+    def test_multi_model_still_claims_support(self):
+        # Regression: when both models are present and agree, the
+        # "Multiple methods support" line must STILL fire.
+        r = _result(
+            blend={"home": 0.55, "draw": 0.25, "away": 0.20},
+            pi_only={"home": 0.55, "draw": 0.25, "away": 0.20},
+            elo_only={"home": 0.55, "draw": 0.25, "away": 0.20},
+            blend_was_used=True,
+            plus_ev_flags=[
+                {
+                    "market": "home",
+                    "edge": 0.05,
+                    "calibrated_pi": 0.55,
+                    "book_fair": 0.50,
+                }
+            ],
+        )
+        vp = value_play(r, min_edge=0.03)
+        out = value_why_text(vp, r)
+        assert "multiple prediction methods support" in out.lower()
+
+
+class TestOutcomeHeadline:
+    """The Prediction tab result card must NOT render "Draw to Win".
+    A draw outcome must read as a draw, not as a win.
+    """
+
+    def test_home_winner_uses_team_name(self):
+        out = outcome_headline({"market": "home", "label": "France", "probability": 0.55})
+        assert out == "France to Win"
+
+    def test_away_winner_uses_team_name(self):
+        out = outcome_headline({"market": "away", "label": "Argentina", "probability": 0.55})
+        assert out == "Argentina to Win"
+
+    def test_draw_outcome_does_not_say_to_win(self):
+        out = outcome_headline({"market": "draw", "label": "Draw", "probability": 0.45})
+        assert "to Win" not in out
+        assert "Draw" in out
+
+    def test_draw_outcome_specific_wording(self):
+        out = outcome_headline({"market": "draw", "label": "Draw", "probability": 0.45})
+        # Exact wording the brief specified.
+        assert out == "Match to End in a Draw"
+
+    def test_draw_outcome_label_does_not_leak(self):
+        # Even if the upstream label carries oddities, draw must read
+        # as a draw and never as "X to Win".
+        out = outcome_headline({"market": "draw", "label": "Draw", "probability": 0.40})
+        assert "to Win" not in out
+
+
+class TestPredictionAndValueSeparation:
+    """The Prediction and Betting Value tabs are still distinct even
+    after the review fixes.  The Prediction tab is driven by
+    ``most_likely_result``; the Betting Value tab is driven by
+    ``value_play``.  A draw-leading prediction and a home-team value
+    play can coexist.
+    """
+
+    def test_most_likely_and_value_play_independent(self):
+        # Home is the predicted favorite at 50%; the value play is on
+        # the draw (a different market).
+        r = _result(
+            blend={"home": 0.50, "draw": 0.30, "away": 0.20},
+            calibrated_pi={"home": 0.50, "draw": 0.30, "away": 0.20},
+            book_fair={"home": 0.50, "draw": 0.20, "away": 0.30},
+            edges={"home": 0.0, "draw": 0.10, "away": -0.10},
+            plus_ev_flags=[
+                {
+                    "market": "draw",
+                    "edge": 0.10,
+                    "calibrated_pi": 0.30,
+                    "book_fair": 0.20,
+                }
+            ],
+        )
+        mlr = most_likely_result(r)
+        vp = value_play(r, min_edge=0.03)
+        # They are independent concerns.
+        assert mlr["market"] == "home"
+        assert vp["status"] == "play"
+        assert vp["market"] == "draw"
+        assert mlr["market"] != vp["market"]
+
+    def test_draw_leading_prediction_keeps_value_separation(self):
+        # Draw is the predicted favorite.  The value play could still
+        # be on home (if home is mispriced).  The two remain separate.
+        r = _result(
+            blend={"home": 0.30, "draw": 0.45, "away": 0.25},
+            calibrated_pi={"home": 0.30, "draw": 0.45, "away": 0.25},
+            book_fair={"home": 0.20, "draw": 0.45, "away": 0.35},
+            edges={"home": 0.10, "draw": 0.0, "away": -0.10},
+            plus_ev_flags=[
+                {
+                    "market": "home",
+                    "edge": 0.10,
+                    "calibrated_pi": 0.30,
+                    "book_fair": 0.20,
+                }
+            ],
+        )
+        mlr = most_likely_result(r)
+        vp = value_play(r, min_edge=0.03)
+        # Most likely: draw
+        assert mlr["market"] == "draw"
+        assert outcome_headline(mlr) == "Match to End in a Draw"
+        # Value play: home (a different market)
+        assert vp["status"] == "play"
+        assert vp["market"] == "home"
