@@ -181,12 +181,59 @@ def test_app_renders_bets_view_via_query_param() -> None:
 
 
 def test_app_renders_analysis_view_via_query_param() -> None:
-    """``?view=analysis`` lands on the Analysis stub (Phase 5 notice)."""
+    """``?view=analysis`` lands on the real Phase 5 Analysis renderer.
+
+    Phase 2 shipped this as a stub with a "coming in Phase 5" notice.
+    Phase 5 replaces the stub with a real, mobile-first, technical
+    Analysis experience.  This test asserts the new flow:
+
+      * Date picker is present (the Analysis view shares the same
+        SELECTED_DATE as Predictions / Bets).
+      * A single primary **"Show Analysis"** button is visible.
+      * All 11 expanders are present.
+      * **Prediction Details** is the only expander that opens by
+        default; the other 10 are collapsed.
+    """
     at = AppTest.from_file(str(_DASHBOARD_APP), default_timeout=60)
     at.query_params["view"] = "analysis"
     at.run()
     assert not at.exception, f"app raised in analysis view: {at.exception}"
+    # Single primary "Show Analysis" button is present.
+    button_texts = [b.label for b in at.button]
+    assert any("Show Analysis" in (t or "") for t in button_texts), (
+        f"Phase 5 'Show Analysis' button missing; got: {button_texts!r}"
+    )
+    # Legacy "Phase 5 lands here" stub is gone.
     info_texts = [i.value for i in at.info]
-    assert any("Phase 5" in (t or "") for t in info_texts), (
-        f"Analysis stub info missing; got: {info_texts!r}"
+    assert not any("Phase 5 lands here" in (t or "") for t in info_texts), (
+        f"Phase 5 stub still leaking into Analysis view: {info_texts!r}"
+    )
+    # All 11 Analysis expanders are present.
+    expander_labels = [e.label or "" for e in at.expander]
+    required = [
+        "Prediction Details",
+        "Model Breakdown",
+        "Pi-Rating",
+        "Elo Rating",
+        "Blend",
+        "Market Comparison",
+        "Poisson View",
+        "Squad Context",
+        "Group Context",
+        "Calibration and Data Quality",
+        "Raw Diagnostics",
+    ]
+    for needle in required:
+        assert any(needle in t for t in expander_labels), (
+            f"Required expander {needle!r} missing from Analysis view: "
+            f"{expander_labels!r}"
+        )
+    # Prediction Details is the only default-open expander.
+    open_expanders = [
+        e.label for e in at.expander
+        if getattr(e.proto, "expanded", False)
+    ]
+    assert open_expanders == ["🎯 Prediction Details"], (
+        f"Expected only 'Prediction Details' to default-open; got "
+        f"{open_expanders!r}"
     )

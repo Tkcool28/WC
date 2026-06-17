@@ -2270,16 +2270,176 @@ def _render_custom_bet_expander(
 def _render_analysis_view(
     corpus: list[dict], name_to_id: dict[str, int], elo_snapshots: dict
 ) -> None:
-    """Stub for the 🔬 Analysis view (real renderer lands in Phase 5).
+    """Real Phase 5 Analysis renderer (mobile-first, technical, model-only).
 
-    Phase 2: the Analysis view intentionally points the user at the
-    legacy flows because the real "select a game and drill in"
-    experience is built in Phase 5. Until then, render a notice.
+    Flow:
+
+      1. Date picker bound to :data:`KEYS.SELECTED_DATE` (shared with
+         Predictions and Bets).  Uses the *same* matcher load as those
+         views so the Analysis page always shows the same games the
+         user sees in the other tabs.
+      2. A single primary button **"🔬 Show Analysis"** that loads
+         matches + predictions for the picked date and stores them in
+         :data:`KEYS.LOADED_MATCHES` / :data:`KEYS.PREDICTIONS_BY_MATCH`.
+      3. A compact matchup selectbox bound to
+         :data:`KEYS.ANALYSIS_GAME` so the pick persists across tab
+         changes and reruns.
+      4. Eleven collapsible sections, one per :mod:`dashboard.analysis_view`
+         helper.  **Prediction Details** opens by default; the rest
+         are collapsed.  **Market Comparison** is gated on whether the
+         user has run a betting-value evaluation through the Bets
+         view; if not, it shows a calm message and the other sections
+         remain fully usable (the Analysis view works on model-only
+         predictions).
+
+    Hard constraints (Phase 5 brief):
+
+      * All sections default to **collapsed** (``expanded=False``)
+        **except** Prediction Details (``expanded=True``).
+      * Market Comparison shows a calm message when no market data
+        exists — it does **not** block any other section.
+      * Selected game persists across tab changes via
+        :data:`KEYS.ANALYSIS_GAME`.
+      * The view works with model-only predictions (no odds required).
+      * Raw Diagnostics surfaces canonical team IDs.
+      * Calibration section surfaces the tier letter (A / B / C / D).
     """
-    st.info(
-        "🔬 Analysis — per-game diagnostic view coming in Phase 5. "
-        "For now, run a game from Predictions or Bets and expand the "
-        "**🔬 Analysis** section in the result block."
+    # Register the data handles the per-match prediction cache uses
+    # (mirrors Predictions / Bets).
+    _corpus_id = id(corpus)
+    _elo_id = id(elo_snapshots)
+    _CORPUS_BY_ID[_corpus_id] = corpus
+    _ELO_BY_ID[_elo_id] = elo_snapshots
+
+    # ---- (1) date picker ---- #
+    picked_date = st.date_input(
+        "Match date",
+        value=DEFAULT_TODAY,
+        format="YYYY-MM-DD",
+        key=KEYS.SELECTED_DATE,
+    )
+    picked_iso = (
+        picked_date.isoformat()
+        if hasattr(picked_date, "isoformat")
+        else str(picked_date)
+    )
+
+    # ---- (2) single primary button (loads matches + predictions) ---- #
+    show_clicked = st.button(
+        "🔬 Show Analysis",
+        key="analysis_show_btn",
+        type="primary",
+        use_container_width=True,
+    )
+
+    # ---- (3) match-prediction cache, refreshed on date / button ---- #
+    loaded_date = _ss_get(KEYS.LOADED_MATCHES + ".date", default=None)
+    needs_load = show_clicked or (
+        loaded_date != picked_iso
+        and _ss_get(KEYS.LOADED_MATCHES) is None
+    )
+
+    if needs_load:
+        with st.spinner("Loading matches and building predictions…"):
+            matches = _load_unplayed_for_date(picked_iso)
+            cutoff_iso = picked_iso + "T23:59:59Z"
+            try:
+                ratings = get_ratings(cutoff_iso, corpus)
+            except Exception:
+                ratings = get_ratings(picked_iso + "T00:00:00Z", corpus)
+            predictions: dict[int, dict] = {}
+            ratings_id = id(ratings)
+            for m in matches:
+                mid = m.get("match_id")
+                if mid is None:
+                    continue
+                home = m.get("home_team_name") or "Home"
+                away = m.get("away_team_name") or "Away"
+                home_id = m.get("home_team_id")
+                away_id = m.get("away_team_id")
+                if home_id is None or away_id is None:
+                    continue
+                match_cutoff = picked_iso + "T00:00:00Z"
+                try:
+                    pred = _predict_match_cached(
+                        home_team=home,
+                        away_team=away,
+                        home_team_id=int(home_id),
+                        away_team_id=int(away_id),
+                        date_iso=match_cutoff,
+                        _ratings_id=ratings_id,
+                        _elo_snapshots_id=_elo_id,
+                        _corpus_id=_corpus_id,
+                    )
+                except Exception as exc:
+                    # Don't take down the whole view for one bad row.
+                    pred = {
+                        "home_team": home,
+                        "away_team": away,
+                        "home_team_id": int(home_id),
+                        "away_team_id": int(away_id),
+                        "date": picked_iso,
+                        "pi_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+                        "blend_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+                        "pi_only_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+                        "elo_only_probs": None,
+                        "blend_was_used": False,
+                        "confidence": {
+                            "tier": "C",
+                            "tier_description": "Limited data",
+                            "warnings": [f"prediction error: {exc!s}"],
+                        },
+                        "banner": "Limited data",
+                        "canonical_home_id": (
+                            m.get("canonical_home_id") or ""
+                        ),
+                        "canonical_away_id": (
+                            m.get("canonical_away_id") or ""
+                        ),
+                        "identity_warnings": [],
+                    }
+                pred["_match_meta"] = {
+                    "group": m.get("group", ""),
+                    "stage": m.get("stage", ""),
+                    "matchday": m.get("matchday"),
+                    "kickoff_iso": m.get("kickoff_iso") or picked_iso,
+                }
+                predictions[int(mid)] = pred
+            _ss_set(KEYS.LOADED_MATCHES, matches)
+            _ss_set(KEYS.LOADED_MATCHES + ".date", picked_iso)
+            _ss_set(KEYS.PREDICTIONS_BY_MATCH, predictions)
+            # The Analysis view never generates new market data; it
+            # only reads whatever the Bets view already cached.  We
+            # don't blow away the existing market cache here — if the
+            # user has run an evaluation through Bets, those numbers
+            # stay visible in the Market Comparison section.
+
+    matches = _ss_get(KEYS.LOADED_MATCHES, default=[]) or []
+    predictions = _ss_get(KEYS.PREDICTIONS_BY_MATCH, default={}) or {}
+    market_by_match = _ss_get(KEYS.MARKET_BY_MATCH, default={}) or {}
+
+    # ---- (4) heading + empty state ---- #
+    st.subheader(f"📅 {picked_iso}")
+    if not matches:
+        st.markdown(
+            f"**No matches on {picked_iso}.**\n\n"
+            "_Pick another date above, or use the **Custom matchup** "
+            "expander in **Predictions** to predict any game._"
+        )
+        return
+
+    st.caption(
+        f"{len(matches)} game{'s' if len(matches) != 1 else ''} on {picked_iso} "
+        f"— pick a game to inspect its full technical breakdown."
+    )
+
+    # ---- (5) hand off to the analysis view renderer ---- #
+    from dashboard.analysis_view import render_analysis_view as _render_av
+    _render_av(
+        matches_for_date=matches,
+        predictions_by_match=predictions,
+        market_by_match=market_by_match,
+        name_to_id=name_to_id,
     )
 
 
