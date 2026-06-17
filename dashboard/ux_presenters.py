@@ -82,14 +82,32 @@ def most_likely_result(result: dict) -> dict:
 def prediction_confidence_label(result: dict) -> str:
     """Return High / Medium / Low from the existing confidence_tier mapping.
 
-    Derives strictly from the existing ``result['confidence']`` assessment
+    Derives primarily from the existing ``result['confidence']`` assessment
     and the existing ``confidence_tier`` helper.  Does NOT invent tiers.
+
+    Genuine multi-model DISAGREEMENT caps the label below High even when
+    the raw tier is "A" — a high calibration / high data score doesn't
+    mean anything if Pi and Elo are pointing at different matches.  A
+    fragile agreement (same top but >= 10 pts probability gap) also caps
+    below High.  A single-model result (missing Elo) is treated the
+    same as a multi-model agreement of the same tier: tier A still
+    reads as "High" (the existing tier is the best signal we have).
     """
     assessment = result["confidence"]
     tier = assessment.get("tier", "C")
+    agreement = agreement_status(result)
 
-    # Map the A/B/C/D tier to High/Medium/Low
-    # A -> High, B -> Medium, C/D -> Low
+    # Genuine multi-model disagreement or fragile agreement can never
+    # produce a "High" prediction confidence — the methods are not in
+    # alignment.  Cap at the tier below.
+    if agreement in ("disagree", "fragile"):
+        if tier == "A":
+            return "Medium"
+        if tier == "B":
+            return "Medium"
+        return "Low"
+
+    # Tier-only mapping (covers agree, only_pi, only_elo).
     if tier == "A":
         return "High"
     if tier == "B":
@@ -446,7 +464,11 @@ def analysis_prediction_details(result: dict) -> list[tuple[str, str]]:
 
 
 def analysis_model_breakdown(result: dict) -> list[tuple[str, str]]:
-    """Return (label, content) tuples for the Model Breakdown section."""
+    """Return (label, content) tuples for the Model Breakdown section.
+
+    Pure presentation.  Uses ``agreement_status`` (the single source of
+    truth) so Pi is never compared against itself when Elo is missing.
+    """
     blended = resolve_model_probs_for_market(result)
     pi_only = result.get("pi_only_probs") or blended
     elo_only = result.get("elo_only_probs")
@@ -470,14 +492,34 @@ def analysis_model_breakdown(result: dict) -> list[tuple[str, str]]:
 
     lines.append(("Blend used", "Yes (Pi + Elo)" if blend_was_used else "No (Pi only)"))
 
-    # Model agreement
-    agree = model_agreement(pi_only, elo_only if elo_only is not None else pi_only)
-    lines.append(("Model agreement", agree["label"]))
-    if agree["label"] == "disagree":
-        lines.append(("Pi top", _pretty_market(agree["pi_top"], home_name, away_name)))
-        lines.append(("Elo top", _pretty_market(agree["elo_top"], home_name, away_name)))
+    # Model agreement — use agreement_status to avoid Pi-vs-self.
+    agreement = agreement_status(result)
+    agreement_text = {
+        "only_pi":     "Only Pi ran (no Elo available)",
+        "only_elo":    "Only Elo ran (no Pi available)",
+        "agree":       "Pi and Elo agree",
+        "fragile":     "Pi and Elo agree (fragile, ≥10pt probability gap)",
+        "disagree":    "Pi and Elo disagree",
+    }[agreement]
+    lines.append(("Model agreement", agreement_text))
+    if agreement == "disagree":
+        # Show the two top picks so the user can see exactly where
+        # the methods diverge.  Both pi_only and elo_only are present
+        # at this point (we're in the multi-model branch).
+        assert pi_only is not None and elo_only is not None
+        pi_top = _top_market_safe(pi_only)
+        elo_top = _top_market_safe(elo_only)
+        lines.append(("Pi top", _pretty_market(pi_top, home_name, away_name)))
+        lines.append(("Elo top", _pretty_market(elo_top, home_name, away_name)))
 
     return lines
+
+
+def _top_market_safe(probs: dict[str, float]) -> str:
+    """Return the top market key from a prob dict.  Defensive — never raises."""
+    if not probs:
+        return "home"
+    return max(("home", "draw", "away"), key=lambda m: probs.get(m, 0.0))
 
 
 def analysis_market_comparison(result: dict) -> list[tuple[str, str]]:

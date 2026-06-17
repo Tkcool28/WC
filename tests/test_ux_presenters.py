@@ -1002,6 +1002,92 @@ class TestOutcomeHeadline:
         assert "to Win" not in out
 
 
+class TestAnalysisModelBreakdownNoElo:
+    """``analysis_model_breakdown`` must NOT compare Pi to itself when
+    Elo is missing.  When only one model ran, the agreement row must
+    read 'Only Pi ran (no Elo available)' or equivalent.
+    """
+
+    def test_only_pi_model_agreement_row(self):
+        r = _result(elo_only=None, blend_was_used=False)
+        rows = analysis_model_breakdown(r)
+        agreement_rows = [v for (k, v) in rows if k == "Model agreement"]
+        assert len(agreement_rows) == 1
+        assert "Pi and Elo agree" not in agreement_rows[0]
+        assert "only pi ran" in agreement_rows[0].lower() or "no elo" in agreement_rows[0].lower()
+
+    def test_disagreement_row_appears_when_models_disagree(self):
+        r = _result(
+            pi_only={"home": 0.55, "draw": 0.20, "away": 0.25},
+            elo_only={"home": 0.25, "draw": 0.20, "away": 0.55},
+            blend_was_used=True,
+        )
+        rows = analysis_model_breakdown(r)
+        agreement_rows = [v for (k, v) in rows if k == "Model agreement"]
+        assert "disagree" in agreement_rows[0].lower()
+        # Pi top and Elo top should be present and DIFFERENT
+        pi_top_rows = [v for (k, v) in rows if k == "Pi top"]
+        elo_top_rows = [v for (k, v) in rows if k == "Elo top"]
+        assert len(pi_top_rows) == 1
+        assert len(elo_top_rows) == 1
+        assert pi_top_rows[0] != elo_top_rows[0]
+
+
+class TestPredictionConfidenceLabelDisagreement:
+    """The Prediction tab 'Prediction Confidence' badge must not show
+    'High' when the methods genuinely disagree (or agree fragilely) —
+    even if the raw confidence tier is 'A'.  The reviewer flagged this
+    as a real inconsistency between the badge and the body text.
+    """
+
+    def test_tier_a_with_disagreement_does_not_say_high(self):
+        r = _result(
+            assessment=_assessment(tier="A", calib_label="high"),
+            pi_only={"home": 0.55, "draw": 0.20, "away": 0.25},
+            elo_only={"home": 0.25, "draw": 0.20, "away": 0.55},
+            blend_was_used=True,
+        )
+        assert prediction_confidence_label(r) != "High"
+
+    def test_tier_a_with_fragile_does_not_say_high(self):
+        # Same top, but a 13pp probability gap -> fragile
+        r = _result(
+            assessment=_assessment(tier="A", calib_label="high"),
+            pi_only={"home": 0.55, "draw": 0.25, "away": 0.20},
+            elo_only={"home": 0.42, "draw": 0.30, "away": 0.28},
+            blend_was_used=True,
+        )
+        assert prediction_confidence_label(r) != "High"
+
+    def test_tier_a_with_genuine_agreement_still_says_high(self):
+        r = _result(
+            assessment=_assessment(tier="A", calib_label="high"),
+            pi_only={"home": 0.55, "draw": 0.25, "away": 0.20},
+            elo_only={"home": 0.53, "draw": 0.27, "away": 0.20},
+            blend_was_used=True,
+        )
+        assert prediction_confidence_label(r) == "High"
+
+    def test_tier_a_with_only_pi_still_says_high(self):
+        # Single-model: the existing tier is the best signal we have.
+        r = _result(assessment=_assessment(tier="A"), elo_only=None, blend_was_used=False)
+        assert prediction_confidence_label(r) == "High"
+
+
+class TestSquadDumpRemoved:
+    """Regression: the Squad and Team Context expander must NOT include
+    a duplicate 'No squad-strength data available' table.
+    """
+
+    def test_analysis_squad_helper_no_longer_called_from_app(self):
+        # analysis_squad_context still exists in ux_presenters (other
+        # callers may use it), but app.py no longer imports it.
+        import dashboard.app as _app
+        src = open(_app.__file__).read()
+        assert "analysis_squad_context" not in src
+        assert "_ux_analysis_squad" not in src
+
+
 class TestPredictionAndValueSeparation:
     """The Prediction and Betting Value tabs are still distinct even
     after the review fixes.  The Prediction tab is driven by

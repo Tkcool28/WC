@@ -72,7 +72,6 @@ from dashboard.ux_presenters import (  # noqa: E402
     analysis_poisson_view as _ux_analysis_poisson,
     analysis_prediction_details as _ux_analysis_prediction,
     analysis_raw_diagnostics as _ux_analysis_raw,
-    analysis_squad_context as _ux_analysis_squad,
     format_odds as _format_odds,
     most_likely_result as _most_likely_result,
     outcome_headline as _outcome_headline,
@@ -954,20 +953,16 @@ def _render_analysis_tab(
         _render_poisson_summary(result)
 
     with st.expander("Squad and Team Context", expanded=False):
-        # Keep the original Phase-4 squad context renderer
+        # The Phase-4 squad context renderer loads the real data from
+        # data/manual/*.csv via the canonical IDs.  It is the single
+        # source of truth for squad context — we do NOT also render a
+        # duplicate table from result['_squad_context'] (that key is
+        # never written, so the duplicate would always read
+        # "No squad-strength data available.").
         _render_squad_context(
             result,
             home_canonical_id=home_canonical_id or "",
             away_canonical_id=away_canonical_id or "",
-        )
-        # Plus a compact label/value dump of the same data, derived
-        # from the manually-attached _squad_context if present.
-        _render_section_table(
-            _ux_analysis_squad(
-                result,
-                home_canonical_id=home_canonical_id,
-                away_canonical_id=away_canonical_id,
-            )
         )
 
     if match_meta:
