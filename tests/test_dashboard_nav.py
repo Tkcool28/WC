@@ -112,19 +112,27 @@ _DASHBOARD_APP = (
 
 
 def test_app_renders_predictions_view_by_default() -> None:
-    """Default landing is Predictions; legacy Auto-populate body is reachable."""
+    """Default landing is the Phase 3 Predictions renderer (model-only).
+
+    The new view shows a date picker, a single primary "Show Predictions"
+    button, and a closed Custom-matchup expander. The legacy
+    "Load games" button from Phase 2 is gone — Phase 3 collapsed the
+    two-step flow (Load games → per-game Run analysis) into a single
+    tap.
+    """
     at = AppTest.from_file(str(_DASHBOARD_APP), default_timeout=60)
     at.run()
     assert not at.exception, f"app raised in default view: {at.exception}"
-    # Predictions stub caption must be present.
-    captions = [c.value for c in at.caption]
-    assert any("Predictions" in (c or "") and "Phase 3" in (c or "") for c in captions), (
-        f"Predictions stub caption missing; got: {captions!r}"
-    )
-    # Auto-populate's "Load games" button must still render under the stub.
+    # Phase 3 single primary button must be present.
     button_texts = [b.label for b in at.button]
-    assert any("Load games" in (t or "") for t in button_texts), (
-        f"Auto-populate 'Load games' button missing; got: {button_texts!r}"
+    assert any("Show Predictions" in (t or "") for t in button_texts), (
+        f"Phase 3 'Show Predictions' button missing; got: {button_texts!r}"
+    )
+    # The "min edge" slider that Phase 2's auto-populate view exposed
+    # must NOT leak into the Phase 3 Predictions view.
+    slider_texts = [s.label for s in at.slider]
+    assert not any("Minimum edge" in (t or "") for t in slider_texts), (
+        f"min-edge slider leaked into Predictions view: {slider_texts!r}"
     )
 
 

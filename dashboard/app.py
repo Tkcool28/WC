@@ -37,7 +37,10 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from soccer_ev_model.ev_workflow import evaluate_match  # noqa: E402
+from soccer_ev_model.ev_workflow import (  # noqa: E402
+    evaluate_match,
+    predict_match,
+)
 from soccer_ev_model.pi_backtest import load_matches  # noqa: E402
 from soccer_ev_model.pi_ratings import compute_pi_ratings  # noqa: E402
 from soccer_ev_model.elo_ratings import elo_at, load_elo_ratings  # noqa: E402
@@ -93,6 +96,11 @@ from dashboard.session_state import (  # noqa: E402
     set_ as _ss_set,
 )
 from dashboard.styles import inject_css as _inject_css  # noqa: E402
+from dashboard.prediction_card import render_prediction_card as _render_prediction_card  # noqa: E402
+from dashboard.text_format import (  # noqa: E402
+    format_group_label as _format_group_label,
+    format_matchday_label as _format_matchday_label,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -1416,19 +1424,368 @@ def _render_top_level_nav() -> str:
     return selected
 
 
+def _predict_match_cached(
+    home_team: str,
+    away_team: str,
+    home_team_id: int,
+    away_team_id: int,
+    date_iso: str,
+    _ratings_id: int,
+    _elo_snapshots_id: int,
+    _corpus_id: int,
+) -> dict:
+    """Per-match prediction with a stable cache key (avoids hashing the
+    full ``ratings`` dict).
+
+    The original ``get_ratings`` is itself cached, so the heavy lifting
+    (pi-rating training) only runs once per cutoff date. This function
+    just memoises the per-match ``predict_match`` call so tab switches
+    and reruns don't re-evaluate every game.
+
+    The ``_ratings_id`` / ``_elo_snapshots_id`` / ``_corpus_id`` parameters
+    are small integer handles produced by the caller.  When the underlying
+    data changes, the caller bumps its id and the cache invalidates.
+    """
+    # Lazy imports so the module import graph stays flat for callers
+    # that only need formatters.
+    from dashboard.app import (
+        get_elo_snapshots,
+        get_ratings,
+        load_training_corpus,
+    )
+    # Re-derive the real objects from the ids. The ids are simply
+    # ``id(...)`` of the data structures in :func:`main`'s session, so
+    # the lookup is just a small dict walk.
+    # In practice, the cache only fires for the lifetime of the
+    # Streamlit session and ``id()`` is stable within one process.
+    _corpus = _CORPUS_BY_ID.get(_corpus_id) or load_training_corpus()
+    _ratings = (
+        get_ratings(date_iso, _corpus)
+        if not _RATINGS_BY_ID.get((_ratings_id, date_iso))
+        else _RATINGS_BY_ID[(_ratings_id, date_iso)]
+    )
+    _elo = _ELO_BY_ID.get(_elo_snapshots_id) or get_elo_snapshots()
+    _CORPUS_BY_ID[_corpus_id] = _corpus
+    _RATINGS_BY_ID[(_ratings_id, date_iso)] = _ratings
+    _ELO_BY_ID[_elo_snapshots_id] = _elo
+
+    home_elo = away_elo = None
+    if _elo:
+        home_elo, _ = elo_at(_elo, home_team, date_iso)
+        away_elo, _ = elo_at(_elo, away_team, date_iso)
+
+    return predict_match(
+        home_team=home_team,
+        away_team=away_team,
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+        date=date_iso,
+        ratings=_ratings,
+        home_elo=home_elo,
+        away_elo=away_elo,
+    )
+
+
+# Small in-process id -> data registries used by ``_predict_match_cached``.
+# Module-level so the same handles are visible to every call within a
+# Streamlit session.
+_CORPUS_BY_ID: dict[int, list[dict]] = {}
+_RATINGS_BY_ID: dict[tuple[int, str], dict] = {}
+_ELO_BY_ID: dict[int, dict] = {}
+
+
 def _render_predictions_view(
     corpus: list[dict], name_to_id: dict[str, int], elo_snapshots: dict
 ) -> None:
-    """Stub for the 🎯 Predictions view (real renderer lands in Phase 3).
+    """Real Phase 3 Predictions renderer (model-only, mobile-first).
 
-    Phase 2 keeps the legacy Auto-populate body reachable from here so
-    end-to-end behavior is preserved during Phase 2 testing.
+    Flow:
+
+    1. Date picker bound to :data:`KEYS.SELECTED_DATE`.
+    2. ONE large primary button **"Show Predictions"**.
+    3. On click: load the day's unplayed matches, build a single
+       pi-ratings snapshot for the date, and render one prediction
+       card per game via :func:`dashboard.prediction_card.render_prediction_card`.
+    4. Empty-state copy when there are no matches on the chosen date.
+    5. A closed-by-default "Custom matchup" expander that lets the
+       user compute a single prediction for any (home, away, date)
+       triple — NO odds fields, NO min-edge slider.
+
+    Hard constraints (Phase 3 brief):
+
+    * NO odds fields of any kind (no American odds, no no-vig probs,
+      no edge, no +EV flag, no ``book_fair``).
+    * NO ``min_edge`` slider.
+    * NO sportsbook terminology ("edge", "EV", "implied", "no-vig",
+      etc.) leaks into the rendered view.
+    * NO raw ISO timestamps or raw ``GROUP_X`` codes are rendered.
+    * The "Why" control is a :func:`streamlit.popover` styled as a
+      mobile CTA bubble (see :mod:`dashboard.styles`).
     """
-    st.caption(
-        "🎯 Predictions — model-only outputs. Real renderer lands in Phase 3. "
-        "Legacy Auto-populate flow below is kept as a stub during Phase 2."
+    # Register the data handles the cache helper uses.
+    _corpus_id = id(corpus)
+    _elo_id = id(elo_snapshots)
+    _CORPUS_BY_ID[_corpus_id] = corpus
+    _ELO_BY_ID[_elo_id] = elo_snapshots
+
+    # ---- (1) date picker ---- #
+    picked_date = st.date_input(
+        "Match date",
+        value=DEFAULT_TODAY,
+        format="YYYY-MM-DD",
+        key=KEYS.SELECTED_DATE,
     )
-    _render_legacy_autopopulate(corpus, name_to_id, elo_snapshots)
+    picked_iso = picked_date.isoformat() if hasattr(picked_date, "isoformat") else str(picked_date)
+
+    # ---- (2) single primary button ---- #
+    show_clicked = st.button(
+        "🎯 Show Predictions",
+        key="predictions_show_btn",
+        type="primary",
+        use_container_width=True,
+    )
+
+    # ---- determine which (date, matches, predictions) tuple to render ---- #
+    # We use a "loaded_date" sentinel in session state so the user can
+    # switch dates without losing the previous render — when the picked
+    # date changes, the predictions cache is refreshed on the next click.
+    loaded_date = _ss_get(KEYS.LOADED_MATCHES + ".date", default=None)
+    needs_load = show_clicked or (
+        loaded_date != picked_iso
+        and _ss_get(KEYS.LOADED_MATCHES) is None
+    )
+
+    if needs_load:
+        with st.spinner("Loading matches and building predictions…"):
+            matches = _load_unplayed_for_date(picked_iso)
+            # Build the pi-ratings snapshot once for the whole date. We
+            # add a small buffer to the cutoff so the snapshot includes
+            # any matches whose UTC date is <= the picked date.
+            cutoff_iso = picked_iso + "T23:59:59Z"
+            try:
+                ratings = get_ratings(cutoff_iso, corpus)
+            except Exception:
+                # Fallback: cut off at the start of the picked date.
+                ratings = get_ratings(picked_iso + "T00:00:00Z", corpus)
+            predictions: dict[int, dict] = {}
+            # Stable handle for the ratings dict so the per-match cache
+            # can invalidate on cutoff change.
+            ratings_id = id(ratings)
+            for m in matches:
+                mid = m.get("match_id")
+                if mid is None:
+                    continue
+                home = m.get("home_team_name") or "Home"
+                away = m.get("away_team_name") or "Away"
+                home_id = m.get("home_team_id")
+                away_id = m.get("away_team_id")
+                if home_id is None or away_id is None:
+                    # Cache row without an id (manual future match) —
+                    # skip silently, the per-game error surface is the
+                    # custom matchup expander below.
+                    continue
+                # Per-match cutoff is the start of the picked date.
+                match_cutoff = picked_iso + "T00:00:00Z"
+                try:
+                    pred = _predict_match_cached(
+                        home_team=home,
+                        away_team=away,
+                        home_team_id=int(home_id),
+                        away_team_id=int(away_id),
+                        date_iso=match_cutoff,
+                        _ratings_id=ratings_id,
+                        _elo_snapshots_id=_elo_id,
+                        _corpus_id=_corpus_id,
+                    )
+                except Exception as exc:
+                    # Don't take down the whole view for one bad row.
+                    pred = {
+                        "home_team": home,
+                        "away_team": away,
+                        "home_team_id": int(home_id),
+                        "away_team_id": int(away_id),
+                        "date": picked_iso,
+                        "pi_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+                        "blend_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+                        "pi_only_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+                        "elo_only_probs": None,
+                        "blend_was_used": False,
+                        "confidence": {
+                            "tier": "C",
+                            "tier_description": "Limited data",
+                            "warnings": [f"prediction error: {exc!s}"],
+                        },
+                        "banner": "Limited data",
+                        "canonical_home_id": m.get("canonical_home_id") or "",
+                        "canonical_away_id": m.get("canonical_away_id") or "",
+                        "identity_warnings": [],
+                    }
+                # Surface the source-match metadata so the card can show
+                # the human-readable kickoff / group / stage labels.
+                pred["_match_meta"] = {
+                    "group": m.get("group", ""),
+                    "stage": m.get("stage", ""),
+                    "matchday": m.get("matchday"),
+                    "kickoff_iso": m.get("kickoff_iso") or picked_iso,
+                }
+                predictions[int(mid)] = pred
+            _ss_set(KEYS.LOADED_MATCHES, matches)
+            _ss_set(KEYS.LOADED_MATCHES + ".date", picked_iso)
+            _ss_set(KEYS.PREDICTIONS_BY_MATCH, predictions)
+            # Also surface the full ratings build in session state so
+            # a future "Analysis" view can reuse it without recomputation.
+            _ss_set(KEYS.MARKET_BY_MATCH, {})
+
+    matches = _ss_get(KEYS.LOADED_MATCHES, default=[]) or []
+    predictions = _ss_get(KEYS.PREDICTIONS_BY_MATCH, default={}) or {}
+    loaded_date = _ss_get(KEYS.LOADED_MATCHES + ".date", default=None)
+
+    # ---- (3) heading + empty state ---- #
+    st.subheader(f"📅 {picked_iso}")
+    if not matches:
+        st.markdown(
+            f"**No matches on {picked_iso}.**\n\n"
+            "_Pick another date above, or use the **Custom matchup** "
+            "expander at the bottom to predict any game._"
+        )
+        _render_custom_matchup_expander(
+            corpus=corpus,
+            name_to_id=name_to_id,
+            elo_snapshots=elo_snapshots,
+        )
+        return
+
+    st.caption(
+        f"{len(matches)} game{'s' if len(matches) != 1 else ''} on {picked_iso}"
+    )
+
+    # ---- (4) render one card per match ---- #
+    for m in matches:
+        mid = m.get("match_id")
+        pred = predictions.get(int(mid)) if mid is not None else None
+        if not pred:
+            # Stale cache: predictions for this match haven't been
+            # computed yet (shouldn't happen because needs_load always
+            # recomputes the full set, but be defensive).
+            continue
+        with st.container(border=False):
+            _render_prediction_card(pred, pred.get("_match_meta") or {})
+
+    # ---- (5) custom matchup expander ---- #
+    _render_custom_matchup_expander(
+        corpus=corpus,
+        name_to_id=name_to_id,
+        elo_snapshots=elo_snapshots,
+    )
+
+
+def _render_custom_matchup_expander(
+    corpus: list[dict],
+    name_to_id: dict[str, int],
+    elo_snapshots: dict,
+) -> None:
+    """Custom-matchup expander at the bottom of the Predictions view.
+
+    Lets the user compute a single prediction for any (home, away, date)
+    triple. NO odds inputs, NO min-edge slider — this is the casual
+    Predictions view's escape hatch for non-2026 fixtures.
+    """
+    with st.expander("➕ Custom matchup", expanded=False):
+        c1, c2 = st.columns(2)
+        home_name = c1.text_input(
+            "Home team",
+            value="",
+            placeholder="e.g. Argentina",
+            key=KEYS.CUSTOM_HOME,
+        )
+        away_name = c2.text_input(
+            "Away team",
+            value="",
+            placeholder="e.g. Brazil",
+            key=KEYS.CUSTOM_AWAY,
+        )
+        match_date = st.date_input(
+            "Match date",
+            value=DEFAULT_TODAY,
+            format="YYYY-MM-DD",
+            key=KEYS.CUSTOM_DATE,
+        )
+        run_clicked = st.button(
+            "🔮 Predict this matchup",
+            key="predictions_custom_run_btn",
+            type="primary",
+            use_container_width=True,
+        )
+
+        if not run_clicked:
+            st.caption(
+                "_Enter two teams and a date, then tap **Predict this matchup**._"
+            )
+            return
+
+        h = (home_name or "").strip()
+        a = (away_name or "").strip()
+        if not h or not a:
+            st.error("Please enter both a home team and an away team.")
+            return
+        if h.lower() == a.lower():
+            st.error("Home and away teams must be different.")
+            return
+
+        h_id = name_to_id.get(h)
+        a_id = name_to_id.get(a)
+        if h_id is None:
+            st.error(
+                f"Team '{h}' not found in training data. "
+                "Try a different spelling (e.g. 'United States' not 'USA')."
+            )
+            return
+        if a_id is None:
+            st.error(
+                f"Team '{a}' not found in training data. "
+                "Try a different spelling (e.g. 'United States' not 'USA')."
+            )
+            return
+
+        cutoff_iso = match_date.isoformat() + "T00:00:00Z"
+        try:
+            ratings = get_ratings(cutoff_iso, corpus)
+        except Exception:
+            ratings = {}
+        if not ratings:
+            st.error(
+                f"No ratings available for cutoff {cutoff_iso}. "
+                "Try an earlier date."
+            )
+            return
+
+        home_elo = away_elo = None
+        if elo_snapshots:
+            home_elo, _ = elo_at(elo_snapshots, h, cutoff_iso)
+            away_elo, _ = elo_at(elo_snapshots, a, cutoff_iso)
+
+        try:
+            prediction = predict_match(
+                home_team=h,
+                away_team=a,
+                home_team_id=int(h_id),
+                away_team_id=int(a_id),
+                date=match_date.isoformat(),
+                ratings=ratings,
+                home_elo=home_elo,
+                away_elo=away_elo,
+            )
+        except Exception as exc:
+            st.error(f"Prediction failed: {exc!s}")
+            return
+
+        meta = {
+            "group": "",
+            "stage": "",
+            "matchday": None,
+            "kickoff_iso": cutoff_iso,
+        }
+        _render_prediction_card(prediction, meta)
 
 
 def _render_bets_view(
@@ -1490,8 +1847,8 @@ def _render_legacy_manual(
 def main() -> None:
     _inject_css()
 
-    st.title("⚽ +EV Soccer Dashboard")
-    st.caption("pi-rating + Elo blend vs book no-vig — calibrated, tiered, mobile-friendly")
+    st.title("⚽ WC Match Center")
+    st.caption("Predictions · Betting Value · Model Analysis")
 
     corpus = load_training_corpus()
     name_to_id = build_name_to_id(corpus)
