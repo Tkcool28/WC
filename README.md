@@ -12,10 +12,14 @@ computation. **Phase 2 (next):** Feature engineering + CatBoost/XGBoost model.
 ## Quick start
 ```bash
 cd /root/soccer-model-lab
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dashboard]"
 pytest -v
 ```
+
+The `python3 -m venv` step is required on a fresh clone — the package is
+not installed system-wide; only a per-project virtualenv will pick it up.
 
 ## Data
 Cached WC match data lives in `data/raw/matches_<year>.json`. Large data
