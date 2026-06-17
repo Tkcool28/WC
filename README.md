@@ -9,6 +9,11 @@ the user compares model %s to bookmaker %s separately.
 computation. **Phase 2 (next):** Feature engineering + CatBoost/XGBoost model.
 **Phase 3 (later):** Walk-forward backtest harness + reporting.
 
+**Phase 4:** Manual squad-strength context panel (display-only). See
+[`dashboard/README.md`](dashboard/README.md#manual-squad-strength-updates-phase-4).
+**No probability changes** — the panel reads `data/manual/*.csv` and
+never touches `soccer_ev_model/`.
+
 ## Quick start
 ```bash
 cd /root/soccer-model-lab
