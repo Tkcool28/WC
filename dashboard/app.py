@@ -64,6 +64,14 @@ from dashboard.data_loader import (  # noqa: E402
     get_unplayed_matches,
     load_matches_cache,
 )
+from dashboard.context_loader import (  # noqa: E402
+    TIER_TO_STYLE as _SQUAD_TIER_TO_STYLE,
+    escape_note_text as _escape_note_text,
+    format_eur as _format_eur,
+    format_gap as _format_gap,
+    get_match_context as _get_match_context,
+    render_notes_bullets as _render_notes_bullets,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -394,6 +402,104 @@ def _render_group_context(
         else:
             bullet_lines.append(f"- {text}")
     st.markdown("\n".join(bullet_lines))
+
+
+def _render_squad_context(
+    result: dict,
+    home_canonical_id: str,
+    away_canonical_id: str,
+) -> None:
+    """Render the Phase 4 squad-strength context panel (display-only).
+
+    This block is *purely cosmetic*:
+
+    * It reads the manually curated ``data/manual/*.csv`` files via
+      :func:`dashboard.context_loader.get_match_context` — no API,
+      no scraping, no model calls.
+    * It does NOT call :func:`soccer_ev_model.ev_workflow.evaluate_match`
+      or any other probability function.
+    * It does NOT modify ``result`` in any way.
+
+    Layout (per the Phase 4 spec):
+
+    1. Squad market value comparison (home vs away)
+    2. Value tier badge for each side (success/info/warning)
+    3. Gap vs opponent % (signed, with arrow) — "—" if either missing
+    4. FIFA ranking fallback when squad value is missing
+    5. Notes (injury/absence/rotation/motivation) as a bullet list
+    6. Source name + snapshot date at the bottom
+
+    Renders nothing-fancy for missing/empty teams: just "Unknown"
+    so the panel never crashes.
+    """
+    home_name = result.get("home_team", "Home")
+    away_name = result.get("away_team", "Away")
+    match_ctx = _get_match_context(home_canonical_id or "", away_canonical_id or "")
+    home_ctx = match_ctx["home"]
+    away_ctx = match_ctx["away"]
+    gap = match_ctx["gap"]
+
+    st.subheader("Squad strength context")
+    # Spec-mandated exact label. Do NOT change wording.
+    st.caption("Context only — not included in the probability model yet.")
+
+    # ---- (a) squad market value comparison ---- #
+    home_eur = _format_eur(home_ctx.get("squad_value"))
+    away_eur = _format_eur(away_ctx.get("squad_value"))
+    st.markdown(
+        f"**Squad market value:** {home_eur} &nbsp;vs&nbsp; {away_eur}"
+    )
+
+    # ---- (b) value tier per side with coloured badge ---- #
+    def _tier_badge(ctx: dict) -> None:
+        tier = ctx.get("value_tier") or "unknown"
+        style = _SQUAD_TIER_TO_STYLE.get(tier, "info")
+        fn = getattr(st, style, st.info)
+        fn(f"Value tier: {tier}")
+
+    tcol1, tcol2 = st.columns(2)
+    with tcol1:
+        st.markdown(f"**{_escape_note_text(home_name)}**")
+        _tier_badge(home_ctx)
+    with tcol2:
+        st.markdown(f"**{_escape_note_text(away_name)}**")
+        _tier_badge(away_ctx)
+
+    # ---- (c) gap vs opponent ---- #
+    gcol1, gcol2 = st.columns(2)
+    gcol1.markdown(
+        f"**Gap vs opponent (home):** {_format_gap(gap.get('home_pct'))}"
+    )
+    gcol2.markdown(
+        f"**Gap vs opponent (away):** {_format_gap(gap.get('away_pct'))}"
+    )
+
+    # ---- (d) FIFA ranking fallback when squad value missing ---- #
+    for side_label, ctx in (("Home", home_ctx), ("Away", away_ctx)):
+        if ctx.get("squad_value") is None:
+            rank = ctx.get("fifa_rank")
+            date = ctx.get("snapshot_date") or ""
+            if rank is not None:
+                date_part = f" ({date})" if date else ""
+                st.caption(f"{side_label} FIFA rank: #{rank}{date_part}")
+            else:
+                st.caption(f"{side_label} FIFA rank: Unknown")
+
+    # ---- (e) notes (injury/absence/rotation/motivation/other) ---- #
+    notes = (home_ctx.get("notes") or []) + (away_ctx.get("notes") or [])
+    if notes:
+        st.markdown("**Team notes (curated, manual):**")
+        bullets = _render_notes_bullets(notes)
+        if bullets:
+            st.markdown(bullets)
+
+    # ---- (f) source + snapshot date at bottom ---- #
+    snap = (home_ctx.get("snapshot_date") or away_ctx.get("snapshot_date") or "").strip()
+    source = home_ctx.get("source") or "Transfermarkt-style manual snapshot"
+    if snap:
+        st.caption(f"Source: {source} — snapshot {snap}")
+    else:
+        st.caption(f"Source: {source}")
 
 
 def _finished_matches_in_group_from_cache(group: str) -> list[dict]:
@@ -757,6 +863,19 @@ def _render_game_result(
     st.markdown(f"**Draw risk:** {draw_label} — {draw_p:.1%}")
     st.markdown(f"**Signal:** {_signal_text(agree, blend_was_used, pi_only)}")
     st.markdown(f"**Confidence:** {tier}")
+
+    # --- Phase 4 — squad strength context (display only) --- #
+    # Placed AFTER the prediction summary and BEFORE the Pi/Elo/Blend
+    # expander per the Phase 4 spec. Reads from data/manual/*.csv via
+    # the context_loader; does NOT call evaluate_match, does NOT modify
+    # any field of `result`. If canonical ids are missing, the renderer
+    # is a no-op for the lookup but still renders an "Unknown" panel
+    # so the user sees the section is intentionally empty.
+    _render_squad_context(
+        result,
+        home_canonical_id=result.get("canonical_home_id", "") or "",
+        away_canonical_id=result.get("canonical_away_id", "") or "",
+    )
 
     with st.expander("Pi / Elo / Blend probability breakdown"):
         rows = []
