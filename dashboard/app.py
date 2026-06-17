@@ -43,20 +43,13 @@ from soccer_ev_model.team_identity import (  # noqa: E402
 )
 from soccer_ev_model.prediction_summary import (  # noqa: E402
     calculate_market_deltas,
-    compute_group_standings,
-    confidence_tier,
-    draw_risk_label,
     expected_goals_from_blend,
     group_context_warnings,
     largest_market_delta,
     market_divergence_label,
-    matchday_label,
-    model_agreement,
     poisson_agreement_label,
     poisson_outcome_probs,
-    prediction_margin_pct,
     resolve_model_probs_for_market,
-    top_two_outcomes,
 )
 
 from dashboard.data_loader import (  # noqa: E402
@@ -71,6 +64,24 @@ from dashboard.context_loader import (  # noqa: E402
     format_gap as _format_gap,
     get_match_context as _get_match_context,
     render_notes_bullets as _render_notes_bullets,
+)
+from dashboard.ux_presenters import (  # noqa: E402
+    analysis_calibration_and_data_quality as _ux_analysis_calibration,
+    analysis_market_comparison as _ux_analysis_market,
+    analysis_model_breakdown as _ux_analysis_model,
+    analysis_poisson_view as _ux_analysis_poisson,
+    analysis_prediction_details as _ux_analysis_prediction,
+    analysis_raw_diagnostics as _ux_analysis_raw,
+    format_odds as _format_odds,
+    most_likely_result as _most_likely_result,
+    outcome_headline as _outcome_headline,
+    prediction_confidence_label as _prediction_confidence_label,
+    prediction_why_text as _prediction_why_text,
+    translate_and_dedupe_warnings as _translate_and_dedupe_warnings,
+    translate_warning as _translate_warning,
+    value_confidence_label as _value_confidence_label,
+    value_play as _value_play,
+    value_why_text as _value_why_text,
 )
 
 
@@ -200,28 +211,6 @@ def _render_warnings(assessment: dict) -> None:
     warnings = assessment.get("warnings") or []
     for w in warnings:
         st.warning(f"⚠️ {w}")
-
-
-def _render_prob_table(result: dict) -> None:
-    """Three-column comparison: model (pi+Elo blend) vs book_fair vs calibrated."""
-    # Prefer the explicit `blend_probs` alias; fall back to `pi_probs` for
-    # backward compatibility with results from older workflow versions.
-    pi = result.get("blend_probs", result["pi_probs"])
-    bf = result["book_fair"]
-    cp = result["calibrated_pi"]
-    ed = result["edges"]
-
-    rows = []
-    for market in ("home", "draw", "away"):
-        rows.append({
-            "Market":    MARKET_LABEL[market],
-            "Model (pi+Elo)":  f"{pi[market]:.1%}",
-            "Cal (pi+Elo)":  f"{cp[market]:.1%}",
-            "Book fair": f"{bf[market]:.1%}",
-            "Edge":      f"{ed[market]:+.3f}",
-        })
-    df = pd.DataFrame(rows)
-    st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 def _render_market_baseline(result: dict) -> None:
@@ -555,25 +544,6 @@ def _pretty_market(market: str, home_name: str, away_name: str) -> str:
     return {"home": home_name, "away": away_name, "draw": "Draw"}[market]
 
 
-def _signal_text(
-    agree: dict,
-    blend_was_used: bool,
-    pi_only: dict | None,
-) -> str:
-    """Build the human-readable Pi/Elo signal line."""
-    if not blend_was_used:
-        return "Pi only (no Elo)"
-    if agree["label"] == "disagree":
-        pi_lbl = agree["pi_top"]
-        elo_lbl = agree["elo_top"]
-        return f"Pi picks {pi_lbl}, Elo picks {elo_lbl}"
-    # agree or fragile: same top
-    top = agree["pi_top"]
-    if agree["label"] == "fragile":
-        return f"Pi and Elo agree on {top}, but probabilities differ by ≥10 pts"
-    return f"Pi and Elo agree on {top}"
-
-
 # --------------------------------------------------------------------------- #
 # Per-game evaluation (pure, testable)
 # --------------------------------------------------------------------------- #
@@ -750,6 +720,281 @@ def evaluate_one_game(
     return {"ok": True, "result": result}
 
 
+def _render_section_table(rows: list[tuple[str, str]]) -> None:
+    """Render a (label, content) list as a compact table for the Analysis tab."""
+    if not rows:
+        st.caption("_(no data)_")
+        return
+    df = pd.DataFrame(
+        [{"Item": label, "Value": content} for label, content in rows]
+    )
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+# --------------------------------------------------------------------------- #
+# Three-tab per-game renderers (UX-only refactor)
+# --------------------------------------------------------------------------- #
+def _render_prediction_tab(result: dict, identity_warnings: list[str]) -> None:
+    """Render the casual Prediction tab (default landing for advanced users
+    drilling into a game result, but always shown first in the per-game block).
+
+    Pure presentation. Reads only from the existing ``result`` dict and the
+    precomputed identity warnings. Does NOT touch model probabilities, market
+    math, or squad-strength math.
+
+    Layout:
+      1. Big "Most Likely Result" card.
+      2. Prediction Confidence (High / Medium / Low) badge.
+      3. Compact "Why?" expander with a short plain-language reason.
+      4. Optional translated warnings (no raw internal codes).
+    """
+    mlr = _most_likely_result(result)
+    pcl = _prediction_confidence_label(result)
+    assessment = result.get("confidence", {}) or {}
+    raw_warnings = list(assessment.get("warnings") or [])
+    style_name, _emoji = TIER_TO_STYLE.get(
+        {"High": "A", "Medium": "B", "Low": "C"}.get(pcl, "C"),
+        ("info", "❔"),
+    )
+    fn = getattr(st, style_name, st.info)
+
+    # ---- (1) big result card ---- #
+    st.markdown("##### Most Likely Result")
+    st.markdown(
+        f"<div style='font-size:1.6em; font-weight:600;'>"
+        f"{_escape_note_text(_outcome_headline(mlr))}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    st.caption(f"Model probability: {mlr['probability']:.1%}")
+
+    # ---- (2) confidence badge ---- #
+    fn(f"Prediction Confidence: {pcl}")
+
+    # ---- (3) Why expander ---- #
+    with st.expander("Why?", expanded=False):
+        st.markdown(
+            _prediction_why_text(
+                result,
+                warnings=raw_warnings,
+                identity_warnings=identity_warnings,
+            )
+        )
+
+    # ---- (4) translated warnings (no raw internal codes) ---- #
+    all_raw = list(identity_warnings) + raw_warnings
+    translated = [_translate_warning(w) for w in all_raw]
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for t in translated:
+        if t and t not in seen:
+            seen.add(t)
+            deduped.append(t)
+    if deduped:
+        st.markdown("**Things to know:**")
+        for line in deduped:
+            st.markdown(f"- {line}")
+
+
+def _render_betting_value_tab(
+    result: dict, min_edge: float, identity_warnings: list[str]
+) -> None:
+    """Render the Betting Value tab (answers "do the available odds offer
+    a worthwhile value opportunity?").
+
+    Pure presentation. Does NOT recompute model probabilities or market
+    math. Uses only the existing ``result['plus_ev_flags']``, book odds,
+    and confidence assessment.
+
+    Layout:
+      1. Entered sportsbook odds (American format).
+      2. Best Value Play OR "No Clear Value" card.
+      3. Value Confidence (independent of Prediction Confidence).
+      4. Compact "Why is this value?" expander.
+      5. Expandable "Advanced market details" (implied / no-vig / model /
+         edge / EV / divergence / raw odds).
+    """
+    book_odds = result.get("book_odds") or {}
+    vp = _value_play(result, min_edge)
+    vcl = _value_confidence_label(vp, result)
+    style_name, _emoji = TIER_TO_STYLE.get(
+        {"High": "A", "Medium": "B", "Low": "C"}.get(vcl, "C"),
+        ("info", "❔"),
+    )
+    fn = getattr(st, style_name, st.info)
+
+    # ---- (1) entered odds ---- #
+    st.markdown("##### Entered sportsbook odds")
+    odds_cols = st.columns(3)
+    odds_cols[0].markdown(
+        f"**Home**: {_format_odds(book_odds.get('home'))}"
+    )
+    odds_cols[1].markdown(
+        f"**Draw**: {_format_odds(book_odds.get('draw'))}"
+    )
+    odds_cols[2].markdown(
+        f"**Away**: {_format_odds(book_odds.get('away'))}"
+    )
+    st.caption("American format (e.g. -230 favorite, +350 underdog).")
+
+    st.markdown("---")
+
+    # ---- (2) Best Value Play / No Clear Value card ---- #
+    if vp["status"] == "play":
+        market_key = vp["market"]
+        market_label = _pretty_market(
+            market_key,
+            result.get("home_team", "Home"),
+            result.get("away_team", "Away"),
+        )
+        st.markdown("##### Best Value Play")
+        st.markdown(
+            f"<div style='font-size:1.4em; font-weight:600;'>"
+            f"{_escape_note_text(market_label)} at "
+            f"{_format_odds(vp.get('odds'))}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            f"Model: {vp.get('model_p', 0):.1%}  ·  "
+            f"Market: {vp.get('market_p', 0):.1%}  ·  "
+            f"Edge: {vp.get('edge', 0):+.1%}"
+        )
+    else:
+        st.markdown("##### Best Value Play")
+        st.markdown(
+            "<div style='font-size:1.4em; font-weight:600;'>"
+            "No Clear Value"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            f"No outcome offers enough value at the entered odds "
+            f"(edge threshold: {min_edge:.0%})."
+        )
+
+    # ---- (3) Value Confidence badge (independent of Prediction) ---- #
+    fn(f"Value Confidence: {vcl}")
+
+    # ---- (4) Why is this value? expander ---- #
+    with st.expander("Why is this value?", expanded=False):
+        st.markdown(_value_why_text(vp, result))
+        if vp["status"] == "play":
+            mlr = _most_likely_result(result)
+            if vp["market"] != mlr["market"]:
+                st.caption(
+                    f"_Note: the most likely result is "
+                    f"{mlr['label']} ({mlr['probability']:.1%}). "
+                    f"The best value is on a different market._"
+                )
+
+    # ---- (5) advanced market details expander ---- #
+    with st.expander("Advanced market details", expanded=False):
+        _render_market_baseline(result)
+        _render_plus_ev_flags(result, min_edge=min_edge)
+        st.json({
+            "book_odds": result.get("book_odds", {}),
+            "book_fair": result.get("book_fair", {}),
+            "calibrated_pi": result.get("calibrated_pi", {}),
+            "edges": result.get("edges", {}),
+            "plus_ev_flags": result.get("plus_ev_flags", []),
+        })
+
+
+def _render_analysis_tab(
+    result: dict,
+    match_meta: dict | None,
+    min_edge: float,
+    identity_warnings: list[str],
+    home_canonical_id: str,
+    away_canonical_id: str,
+) -> None:
+    """Render the Analysis tab (preserves all existing technical info).
+
+    All existing renderers and the technical expanders from the previous
+    layout are still called here.  Nothing is removed; it is reorganized
+    into organized expandable sections.  Raw identity warnings are shown
+    (NOT translated) in the Calibration / Data Quality section.
+    """
+    with st.expander("Prediction Details", expanded=False):
+        _render_section_table(_ux_analysis_prediction(result))
+        # Keep the original confidence banner and warnings visible here
+        # (advanced users want to see the exact tier + warnings list).
+        _render_confidence_banner(result["confidence"], result["banner"])
+        _render_warnings(result["confidence"])
+
+    with st.expander("Model Breakdown", expanded=False):
+        _render_section_table(_ux_analysis_model(result))
+        # Keep the original Pi / Elo / Blend probability table
+        blended = result.get("blend_probs", result["pi_probs"])
+        pi_only = result.get("pi_only_probs") or blended
+        elo_only = result.get("elo_only_probs")
+        rows = []
+        for market in ("home", "draw", "away"):
+            rows.append({
+                "Market": _pretty_market(
+                    market, result["home_team"], result["away_team"]
+                ),
+                "Pi only": f"{pi_only[market]:.1%}",
+                "Elo only": (
+                    f"{elo_only[market]:.1%}" if elo_only is not None else "—"
+                ),
+                "Blend": f"{blended[market]:.1%}",
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    with st.expander("Market Comparison", expanded=False):
+        _render_section_table(_ux_analysis_market(result))
+        _render_market_baseline(result)
+        _render_plus_ev_flags(result, min_edge=min_edge)
+
+    with st.expander("Poisson Score View", expanded=False):
+        _render_section_table(_ux_analysis_poisson(result))
+        _render_poisson_summary(result)
+
+    with st.expander("Squad and Team Context", expanded=False):
+        # The Phase-4 squad context renderer loads the real data from
+        # data/manual/*.csv via the canonical IDs.  It is the single
+        # source of truth for squad context — we do NOT also render a
+        # duplicate table from result['_squad_context'] (that key is
+        # never written, so the duplicate would always read
+        # "No squad-strength data available.").
+        _render_squad_context(
+            result,
+            home_canonical_id=home_canonical_id or "",
+            away_canonical_id=away_canonical_id or "",
+        )
+
+    if match_meta:
+        with st.expander("Group Context", expanded=False):
+            _render_group_context(
+                result,
+                stage=match_meta.get("stage", "") or "",
+                matchday=match_meta.get("matchday"),
+                group=match_meta.get("group", "") or "",
+                finished_matches_in_group=match_meta.get(
+                    "finished_matches_in_group"
+                ),
+            )
+
+    with st.expander("Calibration and Data Quality", expanded=False):
+        _render_section_table(
+            _ux_analysis_calibration(
+                result, identity_warnings=identity_warnings
+            )
+        )
+        # Show raw identity warnings (NOT translated) so advanced users
+        # can still see canonical codes, history_missing flags, etc.
+        if identity_warnings:
+            st.markdown("**Raw identity warnings (technical):**")
+            for iw in identity_warnings:
+                st.markdown(f"- `{iw}`")
+
+    with st.expander("Raw Diagnostics", expanded=False):
+        st.json(_ux_analysis_raw(result))
+
+
 def _render_game_result(
     result: dict,
     min_edge: float,
@@ -761,10 +1006,16 @@ def _render_game_result(
     The optional keyword-only ``match_meta`` argument lets the auto-
     populate flow attach source-match metadata (stage, matchday, group,
     finished matches in the group) so the Phase 3 group-context
-    warning block can render below the Poisson view and above the +EV
-    flags.  When ``match_meta`` is None (the manual flow) the
-    dashboard renders exactly as it did before — no group-context
-    block, no behavioural change.
+    warning block can render in the Analysis tab.  When ``match_meta`` is
+    None (the manual flow) the dashboard renders exactly as before — no
+    group-context block, no behavioural change in the Prediction or
+    Betting Value tabs.
+
+    UX-only refactor: the previous stacked body (prob table, edge
+    metrics, market baseline, Poisson summary, +EV flags, prediction
+    summary, squad context, Pi/Elo expander, input-odds expander) has
+    been reorganized into three tabs — Prediction (casual), Betting
+    Value (odds-focused), Analysis (preserves all technical depth).
     """
     st.markdown("---")
     st.header(f"{result['home_team']}  vs  {result['away_team']}")
@@ -779,123 +1030,37 @@ def _render_game_result(
         st.caption(f"Identity: {h_can or '?'} vs {a_can or '?'}")
 
     # Identity warnings (one per team that couldn't be resolved or
-    # has no corpus history). Always render above the banner so the
-    # user sees them first.
-    for iw in result.get("identity_warnings") or []:
-        st.warning(f"🪪 {iw}")
+    # has no corpus history).  Always render above the tabs so the
+    # user sees them first.  Pass each one through
+    # _translate_and_dedupe_warnings so the casual-facing area above
+    # the tabs does not leak the internal canonical / status codes
+    # (canonical=CPV, status=history_missing, neutral pi-rating,
+    # etc.) and so duplicate raw warnings that translate to the
+    # same sentence collapse to a single rendered warning.  The
+    # raw version is still available in the Analysis tab under
+    # "Calibration and Data Quality" for advanced users.
+    identity_warnings = list(result.get("identity_warnings") or [])
+    for translated in _translate_and_dedupe_warnings(identity_warnings):
+        st.warning(f"🪪 {translated}")
 
-    assessment = result["confidence"]
-    _render_confidence_banner(assessment, result["banner"])
-    _render_warnings(assessment)
-
-    st.subheader("Probability comparison")
-    _render_prob_table(result)
-
-    st.subheader("Edges  (model − book fair)")
-    ed = result["edges"]
-    e1, e2, e3 = st.columns(3)
-    e1.metric("Home", f"{ed['home']:+.3f}")
-    e2.metric("Draw", f"{ed['draw']:+.3f}")
-    e3.metric("Away", f"{ed['away']:+.3f}")
-
-    # Market baseline (model vs book no-vig).  Inserted BEFORE the +EV
-    # block so the user sees model, then market, then +EV.
-    _render_market_baseline(result)
-
-    # Poisson goal model (transparent expected-goals approximation).
-    # Secondary, non-ML view shown alongside the main blend; it does
-    # NOT modify any field of ``result``.  Inserted between the market
-    # baseline and the +EV flags so the user sees model, then market,
-    # then Poisson, then +EV.
-    _render_poisson_summary(result)
-
-    # Phase 3 — group-stage context warnings.  This is a pure
-    # presentation layer that reads nothing from ``result`` and does
-    # not call any evaluator.  The model probabilities are unchanged.
-    # Renders nothing for knockout / unknown stage.
-    if match_meta:
-        _render_group_context(
-            result,
-            stage=match_meta.get("stage", "") or "",
-            matchday=match_meta.get("matchday"),
-            group=match_meta.get("group", "") or "",
-            finished_matches_in_group=match_meta.get("finished_matches_in_group"),
+    tab_pred, tab_value, tab_analysis = st.tabs(
+        ["🎯 Prediction", "💰 Betting Value", "🔬 Analysis"]
+    )
+    with tab_pred:
+        _render_prediction_tab(result, identity_warnings)
+    with tab_value:
+        _render_betting_value_tab(
+            result, min_edge=min_edge, identity_warnings=identity_warnings
         )
-
-    _render_plus_ev_flags(result, min_edge=min_edge)
-
-    # --- Prediction summary --- #
-    # This block intentionally uses the RAW blend probabilities
-    # (`blend_probs`, aliased to `pi_probs` for backward compat).
-    # Calibrated values are surfaced separately via the +EV flags,
-    # not in the summary text the user reads first.
-    st.subheader("Prediction summary")
-    blended = result.get("blend_probs", result["pi_probs"])
-    top, top_p, second, second_p = top_two_outcomes(blended)
-    margin = prediction_margin_pct(blended)
-    draw_label, draw_p = draw_risk_label(blended["draw"])
-
-    pi_only = result.get("pi_only_probs") or blended
-    elo_only = result.get("elo_only_probs")
-    blend_was_used = result.get("blend_was_used", False)
-    agree = model_agreement(pi_only, elo_only if elo_only is not None else pi_only)
-
-    assessment = result["confidence"]
-    # The "low_data" trigger here gates the Low-data warning tier. We
-    # suppress it for identity-unresolved matches: the real problem there
-    # is that the team is unknown, not that the corpus is sparse. The
-    # `identity_unresolved` flag is forwarded separately so the
-    # confidence_tier helper can short-circuit to "Identity unresolved".
-    is_identity_unresolved = bool(assessment.get("identity_unresolved"))
-    tier = confidence_tier(
-        blended,
-        margin,
-        draw_p,
-        agree["label"],
-        low_data=(not is_identity_unresolved) and assessment["tier"] in ("C", "D"),
-        identity_unresolved=is_identity_unresolved,
-        blend_is_pure_pi=not blend_was_used,
-    )
-
-    st.markdown(f"**Top prediction:** {_pretty_market(top, result['home_team'], result['away_team'])} — {top_p:.1%}")
-    st.markdown(f"**Second outcome:** {_pretty_market(second, result['home_team'], result['away_team'])} — {second_p:.1%}")
-    st.markdown(f"**Prediction margin:** +{margin:.1f} pts over {_pretty_market(second, result['home_team'], result['away_team'])}")
-    st.markdown(f"**Draw risk:** {draw_label} — {draw_p:.1%}")
-    st.markdown(f"**Signal:** {_signal_text(agree, blend_was_used, pi_only)}")
-    st.markdown(f"**Confidence:** {tier}")
-
-    # --- Phase 4 — squad strength context (display only) --- #
-    # Placed AFTER the prediction summary and BEFORE the Pi/Elo/Blend
-    # expander per the Phase 4 spec. Reads from data/manual/*.csv via
-    # the context_loader; does NOT call evaluate_match, does NOT modify
-    # any field of `result`. If canonical ids are missing, the renderer
-    # is a no-op for the lookup but still renders an "Unknown" panel
-    # so the user sees the section is intentionally empty.
-    _render_squad_context(
-        result,
-        home_canonical_id=result.get("canonical_home_id", "") or "",
-        away_canonical_id=result.get("canonical_away_id", "") or "",
-    )
-
-    with st.expander("Pi / Elo / Blend probability breakdown"):
-        rows = []
-        for market in ("home", "draw", "away"):
-            rows.append({
-                "Market": _pretty_market(market, result["home_team"], result["away_team"]),
-                "Pi only": f"{pi_only[market]:.1%}",
-                "Elo only": f"{elo_only[market]:.1%}" if elo_only is not None else "—",
-                "Blend": f"{blended[market]:.1%}",
-            })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
-    with st.expander("Input odds & raw values"):
-        st.json({
-            "book_odds": result["book_odds"],
-            "book_fair": result["book_fair"],
-            "pi_probs": result["pi_probs"],
-            "calibrated_pi": result["calibrated_pi"],
-            "edges": result["edges"],
-        })
+    with tab_analysis:
+        _render_analysis_tab(
+            result,
+            match_meta=match_meta,
+            min_edge=min_edge,
+            identity_warnings=identity_warnings,
+            home_canonical_id=result.get("canonical_home_id", "") or "",
+            away_canonical_id=result.get("canonical_away_id", "") or "",
+        )
 
 
 # --------------------------------------------------------------------------- #
