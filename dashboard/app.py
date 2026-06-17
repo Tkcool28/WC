@@ -42,16 +42,27 @@ from soccer_ev_model.team_identity import (  # noqa: E402
     resolve_team as _resolve_team_identity,
 )
 from soccer_ev_model.prediction_summary import (  # noqa: E402
+    calculate_market_deltas,
+    compute_group_standings,
     confidence_tier,
     draw_risk_label,
+    expected_goals_from_blend,
+    group_context_warnings,
+    largest_market_delta,
+    market_divergence_label,
+    matchday_label,
     model_agreement,
+    poisson_agreement_label,
+    poisson_outcome_probs,
     prediction_margin_pct,
+    resolve_model_probs_for_market,
     top_two_outcomes,
 )
 
 from dashboard.data_loader import (  # noqa: E402
     UnplayedMatch,
     get_unplayed_matches,
+    load_matches_cache,
 )
 
 
@@ -205,6 +216,108 @@ def _render_prob_table(result: dict) -> None:
     st.dataframe(df, use_container_width=True, hide_index=True)
 
 
+def _render_market_baseline(result: dict) -> None:
+    """Render the market baseline section (model vs no-vig book comparison).
+
+    Reads ``result['blend_probs']`` (fallback ``pi_probs`` via
+    ``resolve_model_probs_for_market``) and ``result['book_fair']``, then
+    shows the per-market deltas, a divergence label, and the outcome with
+    the largest disagreement.  Pure presentation: no I/O, no model calls.
+    """
+    model_probs = resolve_model_probs_for_market(result)
+    market_probs = result["book_fair"]
+    # Pct-pt deltas (output of calculate_market_deltas) for display & largest.
+    pts_deltas = calculate_market_deltas(model_probs, market_probs)
+    # Raw-probability deltas for the divergence label (its thresholds are
+    # documented in the 0-1 scale, not in pts).
+    raw_deltas = {m: model_probs[m] - market_probs[m] for m in ("home", "draw", "away")}
+    div_label = market_divergence_label(raw_deltas)
+
+    home_name = result.get("home_team", "Home")
+    away_name = result.get("away_team", "Away")
+    market_labels = {"home": home_name, "draw": "Draw", "away": away_name}
+    largest = largest_market_delta(
+        pts_deltas,
+        market_labels=market_labels,
+        model_probs=model_probs,
+        market_probs=market_probs,
+    )
+
+    st.subheader("Market baseline (model vs book no-vig)")
+    st.caption(
+        "Manual book odds input. No live odds feed. This is a model-vs-market "
+        "comparison, not an action recommendation."
+    )
+
+    def _row(market_key: str) -> str:
+        return (
+            f"{MARKET_LABEL[market_key]:<9} "
+            f"{model_probs[market_key] * 100:5.1f}% model  /  "
+            f"{market_probs[market_key] * 100:5.1f}% market  /  "
+            f"{pts_deltas[market_key]:+.1f} pts"
+        )
+
+    lines = [
+        "```",
+        "Model vs Market",
+        _row("home"),
+        _row("draw"),
+        _row("away"),
+        (
+            f"Market read: {div_label} — "
+            f"{largest['label']} {largest['delta_pts']:+.1f} pts vs market"
+        ),
+        "```",
+    ]
+    st.markdown("\n".join(lines))
+
+
+def _render_poisson_summary(result: dict) -> None:
+    """Render the secondary Poisson goal-model block (transparent xG view).
+
+    Computes expected home/away goals from the blend 1X2 distribution via
+    ``expected_goals_from_blend``, then runs an independent-Poisson score
+    matrix through ``poisson_outcome_probs`` to get a parallel 1X2
+    estimate.  This is a *secondary, transparent, non-ML* view shown
+    alongside the main blend; it never modifies the blend probabilities
+    or any other field of ``result``.
+
+    The block is intentionally compact and phone-friendly: a subheader,
+    a one-line xG estimate, a one-line Poisson 1X2, and a one-line
+    agreement label.
+    """
+    model_probs = resolve_model_probs_for_market(result)
+    xg = expected_goals_from_blend(model_probs)
+    poisson_probs = poisson_outcome_probs(xg["home_xg"], xg["away_xg"])
+    agreement = poisson_agreement_label(model_probs, poisson_probs)
+
+    home_name = result.get("home_team", "Home")
+    away_name = result.get("away_team", "Away")
+
+    market_labels = {"home": home_name, "draw": "Draw", "away": away_name}
+    blend_top = market_labels[agreement["blend_top"]]
+    poisson_top = market_labels[agreement["poisson_top"]]
+
+    st.subheader("Poisson goal model (secondary view)")
+    st.caption(
+        "Transparent expected-goals approximation. Independent of the "
+        "main blend. Not from a trained model."
+    )
+
+    st.markdown(
+        "```\n"
+        "Poisson goal model (secondary, transparent)\n"
+        f"xG estimate: {home_name} {xg['home_xg']} / {away_name} {xg['away_xg']}\n"
+        f"Home {poisson_probs['home'] * 100:.1f}% / "
+        f"Draw {poisson_probs['draw'] * 100:.1f}% / "
+        f"Away {poisson_probs['away'] * 100:.1f}%\n"
+        f"Blend top: {blend_top}\n"
+        f"Poisson top: {poisson_top}\n"
+        f"Poisson agreement: {agreement['label']}\n"
+        "```"
+    )
+
+
 def _render_plus_ev_flags(result: dict, min_edge: float) -> None:
     flags = result.get("plus_ev_flags") or []
     st.subheader(f"+EV flags  (edge ≥ {min_edge:.0%})")
@@ -224,6 +337,103 @@ def _render_plus_ev_flags(result: dict, min_edge: float) -> None:
             delta=f"model {f['calibrated_pi']:.1%} vs book {f['book_fair']:.1%}",
             delta_color="normal",
         )
+
+
+def _render_group_context(
+    result: dict,
+    *,
+    stage: str = "",
+    matchday: int | None = None,
+    group: str = "",
+    finished_matches_in_group: list[dict] | None = None,
+) -> None:
+    """Render the group-stage context warning block (Phase 3).
+
+    Pure presentation layer.  Reads nothing from ``result`` (the model
+    output), calls ``group_context_warnings`` from
+    ``soccer_ev_model.prediction_summary``, and emits a compact
+    Streamlit block.  The model probabilities are never read, never
+    modified, never recomputed.
+
+    Behaviour:
+
+    * Knockout / unknown stage → ``group_context_warnings`` returns
+      ``[]`` and this function renders nothing (no subheader, no
+      caption).  The rest of the dashboard looks exactly as before.
+    * Group stage → a subheader + caption + a bullet list of warning
+      texts.  Items with ``severity == 'warning'`` are prefixed with
+      a warning emoji so the user can scan for the high-priority
+      ones.
+
+    Args:
+        result: the ``evaluate_match`` output dict.  Only the
+            ``home_team``/``away_team`` names are read (for the
+            caption) — no probability fields are touched.
+        stage, matchday, group: from the source match metadata.
+        finished_matches_in_group: optional list of finished matches
+            in the same group; passed through to the helper.
+    """
+    _ = result  # intentionally unused: this layer does not read model probs
+    warnings = group_context_warnings(
+        stage=stage,
+        matchday=matchday,
+        group=group,
+        finished_matches_in_group=finished_matches_in_group,
+    )
+    if not warnings:
+        return  # knockout or no group → render nothing
+
+    st.subheader("Group context (warning only)")
+    st.caption("Context only — not included in model probability.")
+
+    bullet_lines: list[str] = []
+    for w in warnings:
+        text = w.get("text", "")
+        if w.get("severity") == "warning":
+            bullet_lines.append(f"- ⚠️ {text}")
+        else:
+            bullet_lines.append(f"- {text}")
+    st.markdown("\n".join(bullet_lines))
+
+
+def _finished_matches_in_group_from_cache(group: str) -> list[dict]:
+    """Read the WC 2026 cache and return finished matches in `group`.
+
+    Used by the auto-populate renderer to feed the Phase 3 standings
+    warning.  Returns an empty list if the cache is missing, the group
+    is empty, or there are simply no finished matches yet.
+
+    The function reads from the same on-disk cache the auto-populate
+    flow already uses (``data/raw/matches_2026.json``).  It is NOT
+    used by the manual flow (which has no group metadata).
+    """
+    if not group:
+        return []
+    try:
+        payload = load_matches_cache()
+    except Exception:
+        return []
+    raw = payload.get("matches") or []
+    out: list[dict] = []
+    for m in raw:
+        if (m.get("group") or "") != group:
+            continue
+        status = (m.get("status") or "").upper()
+        if status != "FINISHED":
+            continue
+        # Keep only the fields the standings helper needs (and a few
+        # extras for the warning text).  This avoids leaking the entire
+        # raw API payload downstream.
+        out.append({
+            "home_team_id": m.get("home_team_id"),
+            "away_team_id": m.get("away_team_id"),
+            "home_team_name": m.get("home_team_name"),
+            "away_team_name": m.get("away_team_name"),
+            "home_goals": m.get("home_goals"),
+            "away_goals": m.get("away_goals"),
+            "date": m.get("date"),
+        })
+    return out
 
 
 def _parse_american_odds(text: str) -> float:
@@ -434,8 +644,22 @@ def evaluate_one_game(
     return {"ok": True, "result": result}
 
 
-def _render_game_result(result: dict, min_edge: float) -> None:
-    """Render the per-game result block (shared by both flows)."""
+def _render_game_result(
+    result: dict,
+    min_edge: float,
+    *,
+    match_meta: dict | None = None,
+) -> None:
+    """Render the per-game result block (shared by both flows).
+
+    The optional keyword-only ``match_meta`` argument lets the auto-
+    populate flow attach source-match metadata (stage, matchday, group,
+    finished matches in the group) so the Phase 3 group-context
+    warning block can render below the Poisson view and above the +EV
+    flags.  When ``match_meta`` is None (the manual flow) the
+    dashboard renders exactly as it did before — no group-context
+    block, no behavioural change.
+    """
     st.markdown("---")
     st.header(f"{result['home_team']}  vs  {result['away_team']}")
     st.caption(f"Match date: {result['date']}")
@@ -467,6 +691,30 @@ def _render_game_result(result: dict, min_edge: float) -> None:
     e1.metric("Home", f"{ed['home']:+.3f}")
     e2.metric("Draw", f"{ed['draw']:+.3f}")
     e3.metric("Away", f"{ed['away']:+.3f}")
+
+    # Market baseline (model vs book no-vig).  Inserted BEFORE the +EV
+    # block so the user sees model, then market, then +EV.
+    _render_market_baseline(result)
+
+    # Poisson goal model (transparent expected-goals approximation).
+    # Secondary, non-ML view shown alongside the main blend; it does
+    # NOT modify any field of ``result``.  Inserted between the market
+    # baseline and the +EV flags so the user sees model, then market,
+    # then Poisson, then +EV.
+    _render_poisson_summary(result)
+
+    # Phase 3 — group-stage context warnings.  This is a pure
+    # presentation layer that reads nothing from ``result`` and does
+    # not call any evaluator.  The model probabilities are unchanged.
+    # Renders nothing for knockout / unknown stage.
+    if match_meta:
+        _render_group_context(
+            result,
+            stage=match_meta.get("stage", "") or "",
+            matchday=match_meta.get("matchday"),
+            group=match_meta.get("group", "") or "",
+            finished_matches_in_group=match_meta.get("finished_matches_in_group"),
+        )
 
     _render_plus_ev_flags(result, min_edge=min_edge)
 
@@ -619,6 +867,7 @@ def _render_auto_populate_view(
         kickoff = m.get("kickoff_iso", loaded_date)
         group = m.get("group") or ""
         stage = m.get("stage") or ""
+        matchday = m.get("matchday")  # 1/2/3 for group stage, None for knockout
 
         # ---- per-game card ---- #
         with st.container(border=True):
@@ -666,7 +915,26 @@ def _render_auto_populate_view(
                 if not outcome["ok"]:
                     st.error(outcome["error"])
                 else:
-                    _render_game_result(outcome["result"], min_edge=min_edge)
+                    # Phase 3 — pass source-match metadata so the
+                    # renderer can show the appropriate group-context
+                    # warnings.  The finished-matches list comes from
+                    # the same on-disk cache the auto-populate flow
+                    # already reads.
+                    match_meta = {
+                        "stage": stage,
+                        "matchday": matchday,
+                        "group": group,
+                        "finished_matches_in_group": (
+                            _finished_matches_in_group_from_cache(group)
+                            if group
+                            else None
+                        ),
+                    }
+                    _render_game_result(
+                        outcome["result"],
+                        min_edge=min_edge,
+                        match_meta=match_meta,
+                    )
 
 
 # --------------------------------------------------------------------------- #

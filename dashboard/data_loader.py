@@ -80,6 +80,10 @@ class UnplayedMatch:
     away_team_id: int | None = None
     group: str = ""
     stage: str = ""
+    # 1, 2, or 3 for group-stage matches; None for knockout / unknown.
+    # Plumbed through the dashboard so the renderer can attach the
+    # appropriate group-context warnings (Phase 3).
+    matchday: int | None = None
     status: str = "TIMED"
     kickoff_mt_iso: str = ""  # full ISO with MT offset, e.g. "2026-06-16T13:00:00-06:00"
     # Canonical team identity (3-letter code like "ARG", "ALG", "USA") used to
@@ -101,6 +105,7 @@ class UnplayedMatch:
             "away_team_id": self.away_team_id,
             "group": self.group,
             "stage": self.stage,
+            "matchday": self.matchday,
             "status": self.status,
             "kickoff_mt_iso": self.kickoff_mt_iso,
             "canonical_home_id": self.canonical_home_id,
@@ -263,6 +268,11 @@ def get_unplayed_matches(
             away_team_id=m.get("away_team_id"),
             group=m.get("group", "") or "",
             stage=m.get("stage", "") or "",
+            # 1, 2, or 3 for group-stage matches; None for knockout
+            # rows (where the field is null in the cache).  The
+            # dashboard uses this for the Phase 3 group-context
+            # warnings — see prediction_summary.matchday_label.
+            matchday=m.get("matchday") if isinstance(m.get("matchday"), int) else None,
             status=status or "TIMED",
             kickoff_mt_iso=_kickoff_mt_iso(kickoff),
             canonical_home_id=home_res.get("canonical_id"),
