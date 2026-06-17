@@ -1,0 +1,298 @@
+{
+  "_meta": {
+    "version": 1,
+    "built_for_year": 2026,
+    "sources": {
+      "football_data": "football-data.org (cached in data/raw/matches_2026.json)",
+      "corpus": "openfootball (cached in data/processed/international_matches.json + data/raw/matches_YYYY_openfootball.json)"
+    }
+  },
+  "ALG": {
+    "name": "Algeria",
+    "football_data_id": 778,
+    "corpus_id": 1240792518,
+    "aliases": ["Algeria", "Algerie"]
+  },
+  "ARG": {
+    "name": "Argentina",
+    "football_data_id": 762,
+    "corpus_id": 710061511,
+    "aliases": ["Argentina", "Arg"]
+  },
+  "AUS": {
+    "name": "Australia",
+    "football_data_id": 779,
+    "corpus_id": 4213855446,
+    "aliases": ["Australia", "AUS"]
+  },
+  "AUT": {
+    "name": "Austria",
+    "football_data_id": 816,
+    "corpus_id": 1825620582,
+    "aliases": ["Austria"]
+  },
+  "BEL": {
+    "name": "Belgium",
+    "football_data_id": 805,
+    "corpus_id": 1945764105,
+    "aliases": ["Belgium"]
+  },
+  "BIH": {
+    "name": "Bosnia-Herzegovina",
+    "football_data_id": 1060,
+    "corpus_id": 2037745876,
+    "aliases": ["Bosnia-Herzegovina", "Bosnia", "Bosnia and Herzegovina"]
+  },
+  "BRA": {
+    "name": "Brazil",
+    "football_data_id": 764,
+    "corpus_id": 1851761881,
+    "aliases": ["Brazil", "Brasil"]
+  },
+  "CAN": {
+    "name": "Canada",
+    "football_data_id": 828,
+    "corpus_id": 3265977026,
+    "aliases": ["Canada"]
+  },
+  "CPV": {
+    "name": "Cape Verde Islands",
+    "football_data_id": 1930,
+    "corpus_id": null,
+    "aliases": ["Cape Verde Islands", "Cape Verde", "Cabo Verde"]
+  },
+  "COL": {
+    "name": "Colombia",
+    "football_data_id": 818,
+    "corpus_id": 625239938,
+    "aliases": ["Colombia"]
+  },
+  "COD": {
+    "name": "Congo DR",
+    "football_data_id": 1934,
+    "corpus_id": null,
+    "aliases": ["Congo DR", "DR Congo", "DRC", "Congo, Democratic Republic of the"]
+  },
+  "CRO": {
+    "name": "Croatia",
+    "football_data_id": 799,
+    "corpus_id": 645283928,
+    "aliases": ["Croatia", "Hrvatska"]
+  },
+  "CUW": {
+    "name": "Curaçao",
+    "football_data_id": 9460,
+    "corpus_id": null,
+    "aliases": ["Curaçao", "Curacao"]
+  },
+  "CZE": {
+    "name": "Czechia",
+    "football_data_id": 798,
+    "corpus_id": 2558081879,
+    "aliases": ["Czechia", "Czech Republic", "Czech"]
+  },
+  "ECU": {
+    "name": "Ecuador",
+    "football_data_id": 791,
+    "corpus_id": 726276149,
+    "aliases": ["Ecuador"]
+  },
+  "EGY": {
+    "name": "Egypt",
+    "football_data_id": 825,
+    "corpus_id": 1177930067,
+    "aliases": ["Egypt"]
+  },
+  "ENG": {
+    "name": "England",
+    "football_data_id": 770,
+    "corpus_id": 4102578634,
+    "aliases": ["England"]
+  },
+  "FRA": {
+    "name": "France",
+    "football_data_id": 773,
+    "corpus_id": 3781547250,
+    "aliases": ["France"]
+  },
+  "GER": {
+    "name": "Germany",
+    "football_data_id": 759,
+    "corpus_id": 686765747,
+    "aliases": ["Germany", "Deutschland"]
+  },
+  "GHA": {
+    "name": "Ghana",
+    "football_data_id": 763,
+    "corpus_id": 241191387,
+    "aliases": ["Ghana"]
+  },
+  "HAI": {
+    "name": "Haiti",
+    "football_data_id": 836,
+    "corpus_id": 2276561027,
+    "aliases": ["Haiti"]
+  },
+  "IRN": {
+    "name": "Iran",
+    "football_data_id": 840,
+    "corpus_id": 1862958422,
+    "aliases": ["Iran", "IR Iran"]
+  },
+  "IRQ": {
+    "name": "Iraq",
+    "football_data_id": 8062,
+    "corpus_id": 3551645410,
+    "aliases": ["Iraq"]
+  },
+  "CIV": {
+    "name": "Ivory Coast",
+    "football_data_id": 1935,
+    "corpus_id": 377890118,
+    "aliases": ["Ivory Coast", "Cote d'Ivoire", "Côte d'Ivoire", "Cote dIvoire"]
+  },
+  "JPN": {
+    "name": "Japan",
+    "football_data_id": 766,
+    "corpus_id": 1468978596,
+    "aliases": ["Japan", "JPN"]
+  },
+  "JOR": {
+    "name": "Jordan",
+    "football_data_id": 8049,
+    "corpus_id": 3513595770,
+    "aliases": ["Jordan"]
+  },
+  "MEX": {
+    "name": "Mexico",
+    "football_data_id": 769,
+    "corpus_id": 1323288868,
+    "aliases": ["Mexico", "México"]
+  },
+  "MAR": {
+    "name": "Morocco",
+    "football_data_id": 815,
+    "corpus_id": 561737311,
+    "aliases": ["Morocco", "Maroc"]
+  },
+  "NED": {
+    "name": "Netherlands",
+    "football_data_id": 8601,
+    "corpus_id": 1629702244,
+    "aliases": ["Netherlands", "Holland", "The Netherlands"]
+  },
+  "NZL": {
+    "name": "New Zealand",
+    "football_data_id": 783,
+    "corpus_id": 3927238023,
+    "aliases": ["New Zealand", "NZ"]
+  },
+  "NOR": {
+    "name": "Norway",
+    "football_data_id": 8872,
+    "corpus_id": 3873867087,
+    "aliases": ["Norway", "Norge"]
+  },
+  "PAN": {
+    "name": "Panama",
+    "football_data_id": 1836,
+    "corpus_id": 2688683013,
+    "aliases": ["Panama", "Panamá"]
+  },
+  "PAR": {
+    "name": "Paraguay",
+    "football_data_id": 761,
+    "corpus_id": 1001373656,
+    "aliases": ["Paraguay"]
+  },
+  "POR": {
+    "name": "Portugal",
+    "football_data_id": 765,
+    "corpus_id": 2920213102,
+    "aliases": ["Portugal"]
+  },
+  "QAT": {
+    "name": "Qatar",
+    "football_data_id": 8030,
+    "corpus_id": 2106369147,
+    "aliases": ["Qatar"]
+  },
+  "KSA": {
+    "name": "Saudi Arabia",
+    "football_data_id": 801,
+    "corpus_id": 1394143212,
+    "aliases": ["Saudi Arabia", "Saudi"]
+  },
+  "SCO": {
+    "name": "Scotland",
+    "football_data_id": 8873,
+    "corpus_id": 2966293321,
+    "aliases": ["Scotland"]
+  },
+  "SEN": {
+    "name": "Senegal",
+    "football_data_id": 804,
+    "corpus_id": 1394320536,
+    "aliases": ["Senegal"]
+  },
+  "RSA": {
+    "name": "South Africa",
+    "football_data_id": 774,
+    "corpus_id": 3356755595,
+    "aliases": ["South Africa", "RSA", "SA"]
+  },
+  "KOR": {
+    "name": "South Korea",
+    "football_data_id": 772,
+    "corpus_id": 1013775298,
+    "aliases": ["South Korea", "Korea Republic", "Korea, Republic of"]
+  },
+  "ESP": {
+    "name": "Spain",
+    "football_data_id": 760,
+    "corpus_id": 390583474,
+    "aliases": ["Spain", "España"]
+  },
+  "SWE": {
+    "name": "Sweden",
+    "football_data_id": 792,
+    "corpus_id": 2296721124,
+    "aliases": ["Sweden", "Sverige"]
+  },
+  "SUI": {
+    "name": "Switzerland",
+    "football_data_id": 788,
+    "corpus_id": 228349791,
+    "aliases": ["Switzerland", "Swiss"]
+  },
+  "TUN": {
+    "name": "Tunisia",
+    "football_data_id": 802,
+    "corpus_id": 1795685710,
+    "aliases": ["Tunisia", "Tunisie"]
+  },
+  "TUR": {
+    "name": "Turkey",
+    "football_data_id": 803,
+    "corpus_id": 3682015050,
+    "aliases": ["Turkey", "Türkiye"]
+  },
+  "USA": {
+    "name": "United States",
+    "football_data_id": 771,
+    "corpus_id": 354830815,
+    "aliases": ["United States", "USA", "US", "United States of America", "U.S.A."]
+  },
+  "URU": {
+    "name": "Uruguay",
+    "football_data_id": 758,
+    "corpus_id": 2437065819,
+    "aliases": ["Uruguay"]
+  },
+  "UZB": {
+    "name": "Uzbekistan",
+    "football_data_id": 8070,
+    "corpus_id": 2853915493,
+    "aliases": ["Uzbekistan", "O'zbekiston"]
+  }
+}

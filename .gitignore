@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+catboost_info/
+*.egg-info/
+data/raw/*.json
+data/raw/*.csv
+data/processed/
+*.pyc
+.DS_Store
+.env
+.idea/
+.vscode/
