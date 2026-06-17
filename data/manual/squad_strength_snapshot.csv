@@ -1,15 +1,15 @@
 canonical_team_id,squad_market_value_eur,avg_player_value_eur,top_5_player_value_eur,most_valuable_player,snapshot_date,source_url
-ARG,1180000000,26300000,265000000,Lautaro Martinez,2026-05-15,https://www.transfermarkt.com/argentinien/kader
-BRA,1080000000,22400000,260000000,Vinicius Junior,2026-05-15,https://www.transfermarkt.com/brasilien/kader
-ENG,1420000000,30800000,310000000,Jude Bellingham,2026-05-15,https://www.transfermarkt.com/england/kader
-FRA,1240000000,25900000,290000000,Kylian Mbappe,2026-05-15,https://www.transfermarkt.com/frankreich/kader
-GER,890000000,18000000,210000000,Florian Wirtz,2026-05-15,https://www.transfermarkt.com/deutschland/kader
-ESP,1010000000,21600000,240000000,Lamine Yamal,2026-05-15,https://www.transfermarkt.com/spanien/kader
-POR,960000000,25300000,225000000,Rafael Leao,2026-05-15,https://www.transfermarkt.com/portugal/kader
-NED,760000000,19500000,200000000,Cody Gakpo,2026-05-15,https://www.transfermarkt.com/niederlande/kader
+ARG,807500000,31057692,265000000,Lautaro Martinez,2026-06-17,https://www.transfermarkt.com/argentinien/kader/verein/3437
+BRA,928200000,35700000,260000000,Vinicius Junior,2026-06-17,https://www.transfermarkt.com/brasilien/kader/verein/3439
+ENG,1360000000,52307692,310000000,Jude Bellingham,2026-06-17,https://www.transfermarkt.com/england/kader/verein/3299
+FRA,1520000000,58461538,290000000,Kylian Mbappe,2026-06-17,https://www.transfermarkt.com/frankreich/kader/verein/3377
+GER,947000000,36423077,210000000,Florian Wirtz,2026-06-17,https://www.transfermarkt.com/deutschland/kader/verein/3262
+ESP,1220000000,46923077,240000000,Lamine Yamal,2026-06-17,https://www.transfermarkt.com/spanien/kader/verein/3375
+POR,1010000000,38846154,225000000,Rafael Leao,2026-06-17,https://www.transfermarkt.com/portugal/kader/verein/3300
+NED,754200000,29007692,200000000,Cody Gakpo,2026-06-17,https://www.transfermarkt.com/niederlande/kader/verein/3379
 ITA,720000000,16000000,170000000,Nicolo Barella,2026-05-15,https://www.transfermarkt.com/italien/kader
-BEL,640000000,16400000,150000000,Jeremy Doku,2026-05-15,https://www.transfermarkt.com/belgien/kader
-CRO,380000000,11900000,110000000,Luka Modric,2026-05-15,https://www.transfermarkt.com/kroatien/kader
+BEL,547500000,21057692,150000000,Jeremy Doku,2026-06-17,https://www.transfermarkt.com/belgien/kader/verein/3382
+CRO,387300000,14896154,110000000,Luka Modric,2026-06-17,https://www.transfermarkt.com/kroatien/kader/verein/3556
 USA,510000000,14200000,135000000,Christian Pulisic,2026-05-15,https://www.transfermarkt.com/usa/kader
 MEX,290000000,9300000,78000000,Hirving Lozano,2026-05-15,https://www.transfermarkt.com/mexiko/kader
 CAN,310000000,9700000,82000000,Alphonso Davies,2026-05-15,https://www.transfermarkt.com/kanada/kader
