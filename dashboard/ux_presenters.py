@@ -374,12 +374,20 @@ def value_why_text(value_play_result: dict, result: dict) -> str:
 # --------------------------------------------------------------------------- #
 # translate_warning
 # --------------------------------------------------------------------------- #
-# Patterns that indicate internal/technical warnings needing translation
+# Patterns that indicate internal/technical warnings needing translation.
+# Each pattern is intentionally un-anchored (no leading ``^``) so it
+# matches both leading-key forms ("canonical=CPV", "history_missing",
+# "neutral pi-rating") and embedded-key forms
+# ("status=history_missing", " ... (canonical=CPV, status=history_missing) ... ",
+# etc.).  This guarantees that the casual-facing area above the
+# Prediction / Betting Value / Analysis tabs never leaks raw
+# canonical= / status= / pi-rating codes, regardless of which form the
+# identity-warning pipeline produces.
 _INTERNAL_WARNING_PATTERNS = [
-    re.compile(r"^canonical=", re.IGNORECASE),
-    re.compile(r"^history_missing", re.IGNORECASE),
-    re.compile(r"^home:\d+\s+away:\d+", re.IGNORECASE),
-    re.compile(r"^neutral\s+pi-rating", re.IGNORECASE),
+    re.compile(r"canonical=", re.IGNORECASE),
+    re.compile(r"\bhistory_missing\b", re.IGNORECASE),
+    re.compile(r"home:\d+\s+away:\d+", re.IGNORECASE),
+    re.compile(r"neutral\s+pi-rating", re.IGNORECASE),
     # Full identity warning sentence containing canonical= and status=
     re.compile(r"has no training-corpus history", re.IGNORECASE),
     re.compile(r"could not be resolved", re.IGNORECASE),
@@ -414,6 +422,35 @@ def translate_warning(raw: str) -> str:
 
     # Default: pass through
     return raw
+
+
+def translate_and_dedupe_warnings(warnings: list[str]) -> list[str]:
+    """Translate a list of raw warnings and deduplicate the translated output.
+
+    Pure helper used by the casual-facing area above the Prediction / Betting
+    Value / Analysis tabs.  Each entry is run through :func:`translate_warning`;
+    entries that translate to the same sentence (or that translate to an empty
+    string) are collapsed to a single entry, preserving first-seen order.
+
+    The "no internal codes above the casual tabs" contract is enforced by
+    :func:`translate_warning`; this helper additionally guarantees that
+    identical translated sentences are not rendered twice.  The raw
+    identity-warnings list is still rendered in the Analysis tab under
+    "Calibration and Data Quality" (advanced view), unchanged.
+    """
+    if not warnings:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in warnings:
+        translated = translate_warning(raw)
+        if not translated:
+            continue
+        if translated in seen:
+            continue
+        seen.add(translated)
+        out.append(translated)
+    return out
 
 
 # --------------------------------------------------------------------------- #

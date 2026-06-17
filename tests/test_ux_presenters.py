@@ -34,6 +34,7 @@ from dashboard.ux_presenters import (
     outcome_headline,
     prediction_confidence_label,
     prediction_why_text,
+    translate_and_dedupe_warnings,
     translate_warning,
     value_confidence_label,
     value_play,
@@ -1146,3 +1147,170 @@ class TestPredictionAndValueSeparation:
         # Value play: home (a different market)
         assert vp["status"] == "play"
         assert vp["market"] == "home"
+
+
+# --------------------------------------------------------------------------- #
+# Identity warnings above the casual tabs (PR #8 review)
+# --------------------------------------------------------------------------- #
+# These tests cover the fix for the outstanding P2 review thread on PR #8:
+# raw identity warnings (canonical=CPV, status=history_missing, neutral
+# pi-rating, etc.) used to leak above the casual Prediction / Betting Value
+# / Analysis tabs.  They must now be translated (and deduplicated) before
+# casual display, while the raw form is still reachable in the Analysis
+# tab for advanced users.
+#
+# The tests are intentionally non-Streamlit: they exercise the pure
+# translate_and_dedupe_warnings helper and inspect dashboard/app.py source
+# for the "raw stays in Analysis" guarantee.  This keeps the tests fast
+# and deterministic.
+_LEAK_TOKENS = (
+    "canonical=",
+    "status=history_missing",
+    "neutral pi-rating",
+)
+
+
+class TestIdentityWarningsAboveCasualTabs:
+    """Regression coverage for the P2 review fix on PR #8.
+
+    The casual-facing area above the Prediction / Betting Value / Analysis
+    tabs must never leak internal identity-warning codes.  This test
+    class pins down:
+
+      * the translation of each internal pattern to the casual sentence
+      * deduplication of identical translated sentences
+      * the guarantee that no raw code tokens leak into the casual area
+      * the guarantee that the Analysis tab still renders raw warnings
+        (advanced users keep the technical view)
+    """
+
+    # --- (a) canonical=CPV is translated to a casual-facing sentence ----
+    def test_canonical_cpv_is_translated(self):
+        raw = (
+            "Team 'Cape Verde' has no training-corpus history "
+            "(canonical=CPV, status=history_missing). Using neutral pi-rating."
+        )
+        translated = translate_warning(raw)
+        assert translated == (
+            "Limited historical data is available for this team."
+        )
+        # And the raw token must not survive in the casual sentence.
+        for token in _LEAK_TOKENS:
+            assert token not in translated
+
+    # --- (b) status=history_missing is translated to a casual-facing sentence
+    def test_status_history_missing_is_translated(self):
+        raw = "status=history_missing"
+        translated = translate_warning(raw)
+        assert translated == (
+            "Limited historical data is available for this team."
+        )
+        assert "status=history_missing" not in translated
+
+    # --- (c) neutral pi-rating is translated to a casual-facing sentence ---
+    def test_neutral_pi_rating_is_translated(self):
+        raw = "neutral pi-rating"
+        translated = translate_warning(raw)
+        assert translated == (
+            "Limited historical data is available for this team."
+        )
+        assert "neutral pi-rating" not in translated
+
+    # --- (d) duplicate raw warnings deduplicate to a single rendered warning
+    def test_duplicate_raw_warnings_collapse_to_single_rendered_warning(self):
+        raw_warnings = [
+            "Team 'Cape Verde' has no training-corpus history "
+            "(canonical=CPV, status=history_missing). Using neutral pi-rating.",
+            "Team 'Cape Verde' has no training-corpus history "
+            "(canonical=CPV, status=history_missing). Using neutral pi-rating.",
+            "neutral pi-rating",  # also translates to the same sentence
+        ]
+        rendered = translate_and_dedupe_warnings(raw_warnings)
+        assert rendered == [
+            "Limited historical data is available for this team."
+        ]
+        # And the dedupe helper is robust to an empty input.
+        assert translate_and_dedupe_warnings([]) == []
+
+    def test_preserves_first_seen_order_of_distinct_translations(self):
+        # Two different teams each with their own history-missing warning
+        # translate to the same sentence in practice; we still collapse
+        # them.  Mixed internal + pass-through sentences keep their order.
+        raw_warnings = [
+            "Team 'Cape Verde' has no training-corpus history "
+            "(canonical=CPV, status=history_missing). Using neutral pi-rating.",
+            "The book has mispriced the draw.",
+            "Team 'DR Congo' has no training-corpus history "
+            "(canonical=COD, status=history_missing). Using neutral pi-rating.",
+        ]
+        rendered = translate_and_dedupe_warnings(raw_warnings)
+        assert rendered == [
+            "Limited historical data is available for this team.",
+            "The book has mispriced the draw.",
+        ]
+
+    # --- (e) raw identity warnings remain visible in the Analysis tab ----
+    def test_analysis_tab_still_renders_raw_warnings(self):
+        # The Analysis tab in dashboard/app.py intentionally keeps the
+        # raw identity-warning list (canonical codes, history_missing,
+        # neutral pi-rating, etc.) for advanced users under
+        # "Calibration and Data Quality".  This test pins that contract
+        # by inspecting the source rather than spinning up Streamlit.
+        import pathlib
+
+        app_source = pathlib.Path(
+            "dashboard/app.py"
+        ).read_text(encoding="utf-8")
+        # 1. The casual area must NOT iterate `identity_warnings` raw.
+        casual_block_anchor = (
+            "Pass each one through\n"
+            "    # _translate_and_dedupe_warnings"
+        )
+        assert casual_block_anchor in app_source, (
+            "Expected the casual-area warning render to use "
+            "_translate_and_dedupe_warnings; the source has drifted."
+        )
+        # 2. The Analysis tab MUST still render raw identity warnings.
+        assert "Raw identity warnings (technical):" in app_source
+        # 3. The raw render path must iterate `identity_warnings` raw
+        #    (i.e. NOT call translate_warning / translate_and_dedupe_warnings
+        #    on the entries it renders there).
+        raw_render_idx = app_source.index(
+            "Raw identity warnings (technical):"
+        )
+        # Find the end of the raw-render block (the closing `st.markdown`).
+        raw_render_block = app_source[
+            raw_render_idx : raw_render_idx + 400
+        ]
+        assert "for iw in identity_warnings" in raw_render_block
+        assert "translate_warning" not in raw_render_block
+        assert "translate_and_dedupe_warnings" not in raw_render_block
+
+    # --- (f) no raw code tokens leak into the casual area above the tabs
+    def test_no_raw_codes_leak_into_casual_area(self):
+        # The actual output that dashboard/app.py passes to st.warning in
+        # the casual area is `translate_and_dedupe_warnings(identity_warnings)`.
+        # We feed it the real-world low-history warning shapes and assert
+        # that none of the raw code tokens survive in any rendered entry.
+        raw_warnings = [
+            "canonical=CPV",
+            "status=history_missing",
+            "neutral pi-rating",
+            "identity_unresolved",
+            "Team 'Cape Verde' has no training-corpus history "
+            "(canonical=CPV, status=history_missing). Using neutral pi-rating.",
+            "Team 'DR Congo' has no training-corpus history "
+            "(canonical=COD, status=history_missing). Using neutral pi-rating.",
+            "Team 'X' could not be resolved via the canonical identity "
+            "registry (canonical_id=None, fd_id=12345). Using neutral "
+            "pi-rating.",
+            "home:429 away:0",
+        ]
+        rendered = translate_and_dedupe_warnings(raw_warnings)
+        assert rendered, "Expected at least one rendered warning"
+        for entry in rendered:
+            for token in _LEAK_TOKENS:
+                assert token not in entry, (
+                    f"Raw code token {token!r} leaked into casual "
+                    f"rendered warning {entry!r}"
+                )

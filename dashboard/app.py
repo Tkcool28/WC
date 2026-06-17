@@ -77,6 +77,7 @@ from dashboard.ux_presenters import (  # noqa: E402
     outcome_headline as _outcome_headline,
     prediction_confidence_label as _prediction_confidence_label,
     prediction_why_text as _prediction_why_text,
+    translate_and_dedupe_warnings as _translate_and_dedupe_warnings,
     translate_warning as _translate_warning,
     value_confidence_label as _value_confidence_label,
     value_play as _value_play,
@@ -1029,11 +1030,18 @@ def _render_game_result(
         st.caption(f"Identity: {h_can or '?'} vs {a_can or '?'}")
 
     # Identity warnings (one per team that couldn't be resolved or
-    # has no corpus history). Always render above the tabs so the
-    # user sees them first.
+    # has no corpus history).  Always render above the tabs so the
+    # user sees them first.  Pass each one through
+    # _translate_and_dedupe_warnings so the casual-facing area above
+    # the tabs does not leak the internal canonical / status codes
+    # (canonical=CPV, status=history_missing, neutral pi-rating,
+    # etc.) and so duplicate raw warnings that translate to the
+    # same sentence collapse to a single rendered warning.  The
+    # raw version is still available in the Analysis tab under
+    # "Calibration and Data Quality" for advanced users.
     identity_warnings = list(result.get("identity_warnings") or [])
-    for iw in identity_warnings:
-        st.warning(f"🪪 {iw}")
+    for translated in _translate_and_dedupe_warnings(identity_warnings):
+        st.warning(f"🪪 {translated}")
 
     tab_pred, tab_value, tab_analysis = st.tabs(
         ["🎯 Prediction", "💰 Betting Value", "🔬 Analysis"]
