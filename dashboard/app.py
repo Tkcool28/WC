@@ -1,13 +1,16 @@
 """
 Streamlit dashboard for the +EV soccer workflow (pi-rating + Elo blend).
 
-Two flows:
-  1. **Auto-populate** (default) — pick a date, click "Load games", see
-     the day's matchups stacked with three odds inputs per game and a
-     "Run analysis" button per game. Reads `data/raw/matches_2026.json`
-     (cached, read-only).
-  2. **Manual** — the original form: type the team names + book odds,
-     click "Run Analysis". Useful for friendly / non-2026 matches.
+Top-level information architecture (Phase 2):
+
+* **🎯 Predictions** — model-only outputs, no odds required.
+* **💰 Bets** — model outputs + book odds + edge/flag.
+* **🔬 Analysis** — full diagnostic breakdown per game.
+
+The legacy two-flow shape (Auto-populate / Manual entry) is preserved
+in Phase 2 as stubs reachable from the new nav: Auto-populate lives
+under Predictions and Manual lives under Bets. Phases 3 and 4 absorb
+these stubs into proper Predictions / Bets renderers.
 
 Both flows share the same renderer helpers and the same
 `evaluate_match(...)` call from `soccer_ev_model.ev_workflow`, which
@@ -83,6 +86,13 @@ from dashboard.ux_presenters import (  # noqa: E402
     value_play as _value_play,
     value_why_text as _value_why_text,
 )
+from dashboard.session_state import (  # noqa: E402
+    KEYS,
+    get as _ss_get,
+    pop as _ss_pop,
+    set_ as _ss_set,
+)
+from dashboard.styles import inject_css as _inject_css  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -1043,24 +1053,33 @@ def _render_game_result(
     for translated in _translate_and_dedupe_warnings(identity_warnings):
         st.warning(f"🪪 {translated}")
 
-    tab_pred, tab_value, tab_analysis = st.tabs(
-        ["🎯 Prediction", "💰 Betting Value", "🔬 Analysis"]
-    )
-    with tab_pred:
-        _render_prediction_tab(result, identity_warnings)
-    with tab_value:
-        _render_betting_value_tab(
-            result, min_edge=min_edge, identity_warnings=identity_warnings
-        )
-    with tab_analysis:
-        _render_analysis_tab(
-            result,
-            match_meta=match_meta,
-            min_edge=min_edge,
-            identity_warnings=identity_warnings,
-            home_canonical_id=result.get("canonical_home_id", "") or "",
-            away_canonical_id=result.get("canonical_away_id", "") or "",
-        )
+    # Phase 2: the per-game 3-tab layout has been replaced with a flat
+    # expander block. The new global Predictions / Bets / Analysis nav
+    # (in :func:`main`) means a per-game "view" switcher is no longer
+    # needed; everything the user wants to drill into lives in a single
+    # expander stack, in priority order:
+    #
+    #   1. Prediction        (casual, default closed)
+    #   2. Betting Value     (odds-focused, default closed)
+    #   3. Analysis          (technical, default open)
+    #
+    # Phases 3-5 will add a global "Analysis" view that wraps this block.
+    with st.container():
+        with st.expander("🎯 Prediction", expanded=False):
+            _render_prediction_tab(result, identity_warnings)
+        with st.expander("💰 Betting Value", expanded=False):
+            _render_betting_value_tab(
+                result, min_edge=min_edge, identity_warnings=identity_warnings
+            )
+        with st.expander("🔬 Analysis", expanded=True):
+            _render_analysis_tab(
+                result,
+                match_meta=match_meta,
+                min_edge=min_edge,
+                identity_warnings=identity_warnings,
+                home_canonical_id=result.get("canonical_home_id", "") or "",
+                away_canonical_id=result.get("canonical_away_id", "") or "",
+            )
 
 
 # --------------------------------------------------------------------------- #
@@ -1337,9 +1356,140 @@ def _render_manual_view(
 
 
 # --------------------------------------------------------------------------- #
+# Top-level view switcher (Phase 2)
+# --------------------------------------------------------------------------- #
+# Map between the visible segmented-control label and the short
+# deep-linkable slug. The label carries the emoji so the segmented bar
+# looks good; the slug is what goes into the URL.
+_VIEW_LABEL_TO_SLUG: dict[str, str] = {
+    "🎯 Predictions": "predictions",
+    "💰 Bets":        "bets",
+    "🔬 Analysis":    "analysis",
+}
+_VIEW_SLUG_TO_LABEL: dict[str, str] = {v: k for k, v in _VIEW_LABEL_TO_SLUG.items()}
+_DEFAULT_VIEW_LABEL = "🎯 Predictions"
+
+
+def _resolve_view_from_query_params() -> str:
+    """Map ``st.query_params['view']`` (if any) to a known view label.
+
+    Unknown / missing slugs fall back to :data:`_DEFAULT_VIEW_LABEL`.
+    """
+    raw = st.query_params.get("view")
+    # ``st.query_params.get`` may return a scalar, a list, or None. The
+    # segmented-control writer below always emits a scalar string, so we
+    # accept the scalar and ignore anything else.
+    if isinstance(raw, str):
+        return _VIEW_SLUG_TO_LABEL.get(raw, _DEFAULT_VIEW_LABEL)
+    return _DEFAULT_VIEW_LABEL
+
+
+def _render_top_level_nav() -> str:
+    """Render the global Predictions / Bets / Analysis switcher.
+
+    Returns the label of the currently selected view. Mutates
+    ``st.query_params['view']`` so the URL is deep-linkable.
+
+    Uses :func:`streamlit.segmented_control` (Streamlit ≥ 1.58), which
+    renders as a native segmented bar and works well on mobile. The
+    selected value is stored under :data:`dashboard.session_state.KEYS.ACTIVE_VIEW`
+    so the three section renderers can read it.
+    """
+    initial = _resolve_view_from_query_params()
+    # Honour the previously-selected view if it's still a valid option.
+    # This keeps the segmented control sticky across reruns triggered by
+    # other widgets (date pickers, sliders, etc.) — without it, every
+    # rerun would snap back to the URL-driven value.
+    current = st.session_state.get(KEYS.ACTIVE_VIEW, initial)
+    if current not in _VIEW_LABEL_TO_SLUG:
+        current = initial
+    selected = st.segmented_control(
+        "View",
+        options=list(_VIEW_LABEL_TO_SLUG),
+        default=current,
+        key=KEYS.ACTIVE_VIEW,
+        label_visibility="collapsed",
+    ) or current
+    # Reflect the choice in the URL so users can share/bookmark it.
+    slug = _VIEW_LABEL_TO_SLUG.get(selected, "predictions")
+    st.query_params["view"] = slug
+    return selected
+
+
+def _render_predictions_view(
+    corpus: list[dict], name_to_id: dict[str, int], elo_snapshots: dict
+) -> None:
+    """Stub for the 🎯 Predictions view (real renderer lands in Phase 3).
+
+    Phase 2 keeps the legacy Auto-populate body reachable from here so
+    end-to-end behavior is preserved during Phase 2 testing.
+    """
+    st.caption(
+        "🎯 Predictions — model-only outputs. Real renderer lands in Phase 3. "
+        "Legacy Auto-populate flow below is kept as a stub during Phase 2."
+    )
+    _render_legacy_autopopulate(corpus, name_to_id, elo_snapshots)
+
+
+def _render_bets_view(
+    corpus: list[dict], name_to_id: dict[str, int], elo_snapshots: dict
+) -> None:
+    """Stub for the 💰 Bets view (real renderer lands in Phase 4).
+
+    Phase 2 keeps the legacy Manual-entry body reachable from here so
+    end-to-end behavior is preserved during Phase 2 testing.
+    """
+    st.caption(
+        "💰 Bets — model + book odds + edge. Real renderer lands in Phase 4. "
+        "Legacy Manual entry flow below is kept as a stub during Phase 2."
+    )
+    _render_legacy_manual(corpus, name_to_id, elo_snapshots)
+
+
+def _render_analysis_view(
+    corpus: list[dict], name_to_id: dict[str, int], elo_snapshots: dict
+) -> None:
+    """Stub for the 🔬 Analysis view (real renderer lands in Phase 5).
+
+    Phase 2: the Analysis view intentionally points the user at the
+    legacy flows because the real "select a game and drill in"
+    experience is built in Phase 5. Until then, render a notice.
+    """
+    st.info(
+        "🔬 Analysis — per-game diagnostic view coming in Phase 5. "
+        "For now, run a game from Predictions or Bets and expand the "
+        "**🔬 Analysis** section in the result block."
+    )
+
+
+def _render_legacy_autopopulate(
+    corpus: list[dict], name_to_id: dict[str, int], elo_snapshots: dict
+) -> None:
+    """Phase 2 stub: original Auto-populate body, called from Predictions.
+
+    Phases 3 will absorb this into a real Predictions renderer; for
+    now it preserves end-to-end behavior.
+    """
+    _render_auto_populate_view(corpus, name_to_id, elo_snapshots)
+
+
+def _render_legacy_manual(
+    corpus: list[dict], name_to_id: dict[str, int], elo_snapshots: dict
+) -> None:
+    """Phase 2 stub: original Manual body, called from Bets.
+
+    Phase 4 will absorb this into a real Bets renderer; for now it
+    preserves end-to-end behavior.
+    """
+    _render_manual_view(corpus, name_to_id, elo_snapshots)
+
+
+# --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
 def main() -> None:
+    _inject_css()
+
     st.title("⚽ +EV Soccer Dashboard")
     st.caption("pi-rating + Elo blend vs book no-vig — calibrated, tiered, mobile-friendly")
 
@@ -1347,13 +1497,20 @@ def main() -> None:
     name_to_id = build_name_to_id(corpus)
     elo_snapshots = get_elo_snapshots()
 
-    tab_auto, tab_manual = st.tabs(["📋 Auto-populate (2026 WC)", "✍️ Manual entry"])
+    selected_view = _render_top_level_nav()
 
-    with tab_auto:
-        _render_auto_populate_view(corpus, name_to_id, elo_snapshots)
-
-    with tab_manual:
-        _render_manual_view(corpus, name_to_id, elo_snapshots)
+    # Route to the active section. Each section is a thin wrapper for
+    # now (Phase 2); Phases 3-5 will replace them with proper renderers.
+    if selected_view == "🎯 Predictions":
+        _render_predictions_view(corpus, name_to_id, elo_snapshots)
+    elif selected_view == "💰 Bets":
+        _render_bets_view(corpus, name_to_id, elo_snapshots)
+    elif selected_view == "🔬 Analysis":
+        _render_analysis_view(corpus, name_to_id, elo_snapshots)
+    else:
+        # Defensive default: unknown label -> Predictions. Should not be
+        # reachable because the segmented control emits known labels.
+        _render_predictions_view(corpus, name_to_id, elo_snapshots)
 
 
 if __name__ == "__main__":
