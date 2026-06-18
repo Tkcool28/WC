@@ -103,6 +103,7 @@ from dashboard.text_format import (  # noqa: E402
     format_matchday_label as _format_matchday_label,
 )
 from dashboard.context_cards import (  # noqa: E402
+    autoload_context_for_date as _autoload_context_for_date,
     build_tournament_snapshot as _build_tournament_snapshot,
     highest_model_confidence as _highest_model_confidence,
     pick_smart_default_date as _pick_smart_default_date,
@@ -2707,6 +2708,25 @@ def main() -> None:
 
     # ---- Context cards (sit between the top-level nav and the per-view
     # dispatcher; visible BEFORE the user clicks Show Predictions). ---- #
+    # Phase 9: autoload matches + predictions on page open so the cards
+    # populate without requiring the user to click "Show Predictions".
+    # The autoload helper is cheap on every rerun — it short-circuits
+    # via KEYS.CONTEXT_AUTOLOAD_DATE when the same date is already
+    # cached.  When the user changes the per-view date picker the
+    # sentinel mismatch forces a fresh load (the helper registers
+    # corpus / elo handles in the same registries the per-view
+    # renderers use, so subsequent Show-Predictions clicks reuse the
+    # pi-rating snapshot).
+    _target_date = _ss_get(KEYS.SELECTED_DATE)
+    if hasattr(_target_date, "isoformat") and not isinstance(_target_date, str):
+        try:
+            _target_date = _target_date.isoformat()
+        except Exception:
+            _target_date = None
+    if not isinstance(_target_date, str) or not _target_date:
+        _target_date = _smart_default_date().isoformat()
+    _autoload_context_for_date(_target_date, corpus, elo_snapshots)
+
     _loaded_matches_for_cards = _ss_get(KEYS.LOADED_MATCHES, default=[]) or []
     _predictions_for_cards = _ss_get(KEYS.PREDICTIONS_BY_MATCH, default={}) or {}
     _render_tournament_snapshot(
