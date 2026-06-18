@@ -13,3 +13,7 @@ Loading matches...
   hl=730d   | 2014_WC      | N=  73 | LogL=1.0072 | RPS=0.2194 | 12s
   hl=730d   | 2018_WC      | N=  65 | LogL=1.0164 | RPS=0.2232 | 10s
   hl=730d   | 2022_WC      | N=  87 | LogL=1.0446 | RPS=0.2225 | 9s
+  hl=730d   | 2023_onward  | N=3613 | LogL=0.9548 | RPS=0.1944 | 178s
+  hl=1460d  | 2014_WC      | N=  73 | LogL=1.0121 | RPS=0.2212 | 11s
+  hl=1460d  | 2018_WC      | N=  65 | LogL=1.0175 | RPS=0.2235 | 10s
+  hl=1460d  | 2022_WC      | N=  87 | LogL=1.0450 | RPS=0.2228 | 9s
