@@ -311,8 +311,19 @@ def run_multi_model_backtest(
 
         t0 = _time.time()
 
-        # Pi-ratings
-        pi_ratings = compute_pi_ratings(train, cutoff=d.isoformat(), learning_rate=pi_learning_rate)
+        # Pi-ratings — convert GoalMatch to dicts for compute_pi_ratings
+        train_dicts = [
+            {
+                "date": m.match_date.isoformat(),
+                "home_team_id": m.home_team_id,
+                "away_team_id": m.away_team_id,
+                "home_goals": m.home_goals,
+                "away_goals": m.away_goals,
+                "result": m.result,
+            }
+            for m in train
+        ]
+        pi_ratings = compute_pi_ratings(train_dicts, cutoff=d.isoformat(), learning_rate=pi_learning_rate)
 
         # Goal model
         try:
