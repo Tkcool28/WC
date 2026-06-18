@@ -1,83 +1,40 @@
 {
-  "runtime_seconds": 49.8,
-  "n_common": 87,
-  "n_total": 87,
-  "comparison": {
-    "holdout": "2022_WC",
-    "n_common": 87,
-    "n_total": 87,
-    "exclusions": {
-      "pi_missing": 0,
-      "elo_missing": 0,
-      "goal_missing": 0
-    },
-    "pi": {
-      "n_matches": 87,
-      "log_loss": 1.0482,
-      "rps": 0.2213,
-      "brier": 0.6213,
-      "top1": 0.483,
-      "home_cal": 0.437,
-      "draw_cal": 0.241,
-      "away_cal": 0.322
-    },
-    "elo": {
-      "n_matches": 87,
-      "log_loss": 1.0111,
-      "rps": 0.2126,
-      "brier": 0.6009,
-      "top1": 0.506,
-      "home_cal": 0.437,
-      "draw_cal": 0.241,
-      "away_cal": 0.322
-    },
-    "blend": {
-      "n_matches": 87,
-      "log_loss": 1.0482,
-      "rps": 0.2213,
-      "brier": 0.6213,
-      "top1": 0.483,
-      "home_cal": 0.437,
-      "draw_cal": 0.241,
-      "away_cal": 0.322
-    },
-    "goal": {
-      "n_matches": 87,
-      "log_loss": 1.0197,
-      "rps": 0.2125,
-      "brier": 0.6063,
-      "top1": 0.517,
-      "home_cal": 0.437,
-      "draw_cal": 0.241,
-      "away_cal": 0.322,
-      "mae_home_goals": 1.13,
-      "mae_away_goals": 0.87,
-      "mae_total_goals": 1.499,
-      "poisson_nll": 3.0291,
-      "exact_score": 0.126
-    }
+  "version": "phase3_evidence_audit",
+  "date": "2026-06-18",
+  "sample_definitions": {
+    "2014_WC": {"n": 64, "type": "pure_tournament_block"},
+    "2018_WC": {"n": 64, "type": "pure_tournament_block"},
+    "2022_WC": {"n": 64, "type": "pure_tournament_block"},
+    "2023_onward": {"n": 3613, "type": "all_internationals_since_2023"},
+    "aggregate": {"n": 3805, "type": "union_of_4_blocks"}
   },
-  "blend_best": "blend_40_60",
-  "confirmation": {
-    "holdout": "2022_WC",
-    "n": 87,
-    "same_top_count": 76,
-    "same_top_rate": 0.8736,
-    "mild_disagreement": 42,
-    "strong_disagreement": 11
+  "model_aggregate_comparison": {
+    "pi_only": {"n": 3805, "log_loss": 0.969857, "rps": 0.197281, "brier": 0.573289, "top1": 0.554534},
+    "elo_only": {"n": 3805, "log_loss": 0.927100, "rps": 0.184872, "brier": 0.543168, "top1": 0.588173},
+    "goal_only": {"n": 3805, "log_loss": 0.934044, "rps": 0.188964, "brier": 0.551193, "top1": 0.566886},
+    "elo60_goal40": {"n": 3805, "log_loss": 0.918450, "rps": 0.182779, "brier": 0.538440, "top1": 0.593430},
+    "pi30_elo40_goal30": {"n": 3805, "log_loss": 0.918450, "rps": 0.182752, "brier": 0.539085, "top1": 0.586859}
   },
-  "subgroups": {
-    "neutral": {
-      "n": 65,
-      "log_loss": 1.0107,
-      "rps": 0.2087,
-      "top1": 0.523
-    },
-    "non_neutral": {
-      "n": 22,
-      "log_loss": 1.0465,
-      "rps": 0.224,
-      "top1": 0.5
-    }
+  "best_blend_label": "elo60_goal40",
+  "best_blend_weights": {"elo": 0.6, "goal": 0.4, "pi": 0.0},
+  "selection_rationale": "Tied aggregate log loss with Pi30/Elo40/Goal30 (0.918450). Better draw calibration (0.228 vs 0.216 predicted draw), better Top-1 (0.5934 vs 0.5869), cleaner two-model blend avoiding Pi draw bias.",
+  "phase_1_corrections": [
+    "Elo60, not Pi30, is closer on aggregate draw average",
+    "Pi30 actual H/D/A is the same sample: approx 0.470 / 0.230 / 0.300",
+    "Earlier 2014/2018/2022 date-window counts (87/23) invalid; pure WC blocks are 64 each"
+  ],
+  "priors": {
+    "fifa_rankings": {"backtestable": false, "historical_use": false, "recommendation": "production_only"},
+    "squad_strength": {"backtestable": false, "historical_use": false, "recommendation": "production_only"},
+    "context_notes": {"backtestable": false, "historical_use": false, "recommendation": "not_applicable"}
+  },
+  "stage_effects": {"tested": true, "improvement": false, "decision": "rejected"},
+  "final_recommendation": {
+    "primary_candidate": "Elo60/Goal40",
+    "mode": "shadow_mode",
+    "do_not_replace_production_yet": true,
+    "use_goal_model_immediately_for": ["xG_display", "scoreline_distribution", "totals", "disagreement_context"],
+    "forward_validation_needed": true,
+    "validation_criteria": "N>=200, blend LL <= Elo-only LL, no calibration drift, blend improves on both parents"
   }
 }

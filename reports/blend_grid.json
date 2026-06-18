@@ -1,69 +1,505 @@
 {
-  "holdout": "2022_WC",
+  "audit_version": "trusted_correction_v2_phase3",
+  "best_by_aggregate_log_loss": "elo_goal_60_40 (tied with 3way_30pi_40elo_30goal at 0.918450)",
+  "n_common": 3805,
   "results": {
-    "pi_only": {
-      "log_loss": 1.0482,
-      "rps": 0.2213,
-      "brier": 0.6213,
-      "top1": 0.483,
-      "n": 87
+    "3way_20pi_30elo_50goal": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.33216,
+      "avg_pred_draw": 0.222263,
+      "avg_pred_home": 0.445578,
+      "brier": 0.540086,
+      "log_loss": 0.919778,
+      "n_matches": 3805,
+      "rps": 0.183449,
+      "top1": 0.587122,
+      "weights": {
+        "elo": 0.3,
+        "goal": 0.5,
+        "pi": 0.2
+      }
+    },
+    "3way_25pi_35elo_40goal": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.334191,
+      "avg_pred_draw": 0.219304,
+      "avg_pred_home": 0.446505,
+      "brier": 0.539364,
+      "log_loss": 0.918831,
+      "n_matches": 3805,
+      "rps": 0.183004,
+      "top1": 0.586597,
+      "weights": {
+        "elo": 0.35,
+        "goal": 0.4,
+        "pi": 0.25
+      }
+    },
+    "3way_30pi_40elo_30goal": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.336223,
+      "avg_pred_draw": 0.216345,
+      "avg_pred_home": 0.447432,
+      "brier": 0.539085,
+      "log_loss": 0.91845,
+      "n_matches": 3805,
+      "rps": 0.182752,
+      "top1": 0.586859,
+      "weights": {
+        "elo": 0.4,
+        "goal": 0.3,
+        "pi": 0.3
+      }
+    },
+    "3way_40pi_40elo_20goal": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.338829,
+      "avg_pred_draw": 0.211697,
+      "avg_pred_home": 0.449474,
+      "brier": 0.540495,
+      "log_loss": 0.92006,
+      "n_matches": 3805,
+      "rps": 0.18321,
+      "top1": 0.588436,
+      "weights": {
+        "elo": 0.4,
+        "goal": 0.2,
+        "pi": 0.4
+      }
+    },
+    "actual_current_production_blend": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.34864,
+      "avg_pred_draw": 0.18889,
+      "avg_pred_home": 0.46247,
+      "brier": 0.573289,
+      "log_loss": 0.969857,
+      "n_matches": 3805,
+      "rps": 0.197281,
+      "top1": 0.554534,
+      "weights": {
+        "elo": 0.0,
+        "goal": 0.0,
+        "pi": 1.0
+      }
+    },
+    "elo_goal_30_70": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.326947,
+      "avg_pred_draw": 0.231558,
+      "avg_pred_home": 0.441495,
+      "brier": 0.54184,
+      "log_loss": 0.922372,
+      "n_matches": 3805,
+      "rps": 0.184473,
+      "top1": 0.587648,
+      "weights": {
+        "elo": 0.3,
+        "goal": 0.7,
+        "pi": 0.0
+      }
+    },
+    "elo_goal_40_60": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.328404,
+      "avg_pred_draw": 0.230288,
+      "avg_pred_home": 0.441308,
+      "brier": 0.540045,
+      "log_loss": 0.920239,
+      "n_matches": 3805,
+      "rps": 0.183597,
+      "top1": 0.59159,
+      "weights": {
+        "elo": 0.4,
+        "goal": 0.6,
+        "pi": 0.0
+      }
+    },
+    "elo_goal_50_50": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.32986,
+      "avg_pred_draw": 0.229019,
+      "avg_pred_home": 0.441121,
+      "brier": 0.538912,
+      "log_loss": 0.918928,
+      "n_matches": 3805,
+      "rps": 0.183032,
+      "top1": 0.59343,
+      "weights": {
+        "elo": 0.5,
+        "goal": 0.5,
+        "pi": 0.0
+      }
+    },
+    "elo_goal_60_40": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.331317,
+      "avg_pred_draw": 0.227749,
+      "avg_pred_home": 0.440934,
+      "brier": 0.53844,
+      "log_loss": 0.91845,
+      "n_matches": 3805,
+      "rps": 0.182779,
+      "top1": 0.59343,
+      "weights": {
+        "elo": 0.6,
+        "goal": 0.4,
+        "pi": 0.0
+      }
+    },
+    "elo_goal_70_30": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.332774,
+      "avg_pred_draw": 0.226479,
+      "avg_pred_home": 0.440747,
+      "brier": 0.53863,
+      "log_loss": 0.918851,
+      "n_matches": 3805,
+      "rps": 0.182836,
+      "top1": 0.595795,
+      "weights": {
+        "elo": 0.7,
+        "goal": 0.3,
+        "pi": 0.0
+      }
+    },
+    "elo_goal_80_20": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.33423,
+      "avg_pred_draw": 0.22521,
+      "avg_pred_home": 0.44056,
+      "brier": 0.539481,
+      "log_loss": 0.920231,
+      "n_matches": 3805,
+      "rps": 0.183203,
+      "top1": 0.59343,
+      "weights": {
+        "elo": 0.8,
+        "goal": 0.2,
+        "pi": 0.0
+      }
+    },
+    "elo_goal_90_10": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.335687,
+      "avg_pred_draw": 0.22394,
+      "avg_pred_home": 0.440373,
+      "brier": 0.540994,
+      "log_loss": 0.922802,
+      "n_matches": 3805,
+      "rps": 0.183882,
+      "top1": 0.591064,
+      "weights": {
+        "elo": 0.9,
+        "goal": 0.1,
+        "pi": 0.0
+      }
+    },
+    "elo_only": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.337143,
+      "avg_pred_draw": 0.22267,
+      "avg_pred_home": 0.440186,
+      "brier": 0.543168,
+      "log_loss": 0.9271,
+      "n_matches": 3805,
+      "rps": 0.184872,
+      "top1": 0.588173,
+      "weights": {
+        "elo": 1.0,
+        "goal": 0.0,
+        "pi": 0.0
+      }
     },
     "goal_only": {
-      "log_loss": 1.0197,
-      "rps": 0.2125,
-      "brier": 0.6063,
-      "top1": 0.517,
-      "n": 87
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.322577,
+      "avg_pred_draw": 0.235367,
+      "avg_pred_home": 0.442056,
+      "brier": 0.551193,
+      "log_loss": 0.934044,
+      "n_matches": 3805,
+      "rps": 0.188964,
+      "top1": 0.566886,
+      "weights": {
+        "elo": 0.0,
+        "goal": 1.0,
+        "pi": 0.0
+      }
     },
-    "blend_90_10": {
-      "log_loss": 1.0359,
-      "rps": 0.2188,
-      "brier": 0.6157,
-      "top1": 0.483,
-      "n": 87
+    "pi_goal_30_70": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.330396,
+      "avg_pred_draw": 0.221424,
+      "avg_pred_home": 0.44818,
+      "brier": 0.548741,
+      "log_loss": 0.930418,
+      "n_matches": 3805,
+      "rps": 0.187577,
+      "top1": 0.569514,
+      "weights": {
+        "elo": 0.0,
+        "goal": 0.7,
+        "pi": 0.3
+      }
     },
-    "blend_80_20": {
-      "log_loss": 1.027,
-      "rps": 0.2166,
-      "brier": 0.611,
-      "top1": 0.483,
-      "n": 87
+    "pi_goal_40_60": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.333003,
+      "avg_pred_draw": 0.216776,
+      "avg_pred_home": 0.450221,
+      "brier": 0.549653,
+      "log_loss": 0.931533,
+      "n_matches": 3805,
+      "rps": 0.187854,
+      "top1": 0.569514,
+      "weights": {
+        "elo": 0.0,
+        "goal": 0.6,
+        "pi": 0.4
+      }
     },
-    "blend_70_30": {
-      "log_loss": 1.0205,
-      "rps": 0.2148,
-      "brier": 0.6072,
-      "top1": 0.494,
-      "n": 87
+    "pi_goal_50_50": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.335609,
+      "avg_pred_draw": 0.212128,
+      "avg_pred_home": 0.452263,
+      "brier": 0.55143,
+      "log_loss": 0.933866,
+      "n_matches": 3805,
+      "rps": 0.188501,
+      "top1": 0.569251,
+      "weights": {
+        "elo": 0.0,
+        "goal": 0.5,
+        "pi": 0.5
+      }
     },
-    "blend_60_40": {
-      "log_loss": 1.016,
-      "rps": 0.2134,
-      "brier": 0.6043,
-      "top1": 0.494,
-      "n": 87
+    "pi_goal_60_40": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.338215,
+      "avg_pred_draw": 0.207481,
+      "avg_pred_home": 0.454304,
+      "brier": 0.554072,
+      "log_loss": 0.937508,
+      "n_matches": 3805,
+      "rps": 0.189518,
+      "top1": 0.567937,
+      "weights": {
+        "elo": 0.0,
+        "goal": 0.4,
+        "pi": 0.6
+      }
     },
-    "blend_50_50": {
-      "log_loss": 1.0132,
-      "rps": 0.2123,
-      "brier": 0.6024,
-      "top1": 0.494,
-      "n": 87
+    "pi_goal_70_30": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.340821,
+      "avg_pred_draw": 0.202833,
+      "avg_pred_home": 0.456346,
+      "brier": 0.557579,
+      "log_loss": 0.9426,
+      "n_matches": 3805,
+      "rps": 0.190904,
+      "top1": 0.565309,
+      "weights": {
+        "elo": 0.0,
+        "goal": 0.3,
+        "pi": 0.7
+      }
     },
-    "blend_40_60": {
-      "log_loss": 1.0119,
-      "rps": 0.2116,
-      "brier": 0.6013,
-      "top1": 0.483,
-      "n": 87
+    "pi_goal_80_20": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.343428,
+      "avg_pred_draw": 0.198185,
+      "avg_pred_home": 0.458387,
+      "brier": 0.561951,
+      "log_loss": 0.949365,
+      "n_matches": 3805,
+      "rps": 0.19266,
+      "top1": 0.562681,
+      "weights": {
+        "elo": 0.0,
+        "goal": 0.2,
+        "pi": 0.8
+      }
     },
-    "blend_30_70": {
-      "log_loss": 1.0119,
-      "rps": 0.2113,
-      "brier": 0.6012,
-      "top1": 0.494,
-      "n": 87
+    "pi_goal_90_10": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.346034,
+      "avg_pred_draw": 0.193538,
+      "avg_pred_home": 0.460428,
+      "brier": 0.567187,
+      "log_loss": 0.958184,
+      "n_matches": 3805,
+      "rps": 0.194786,
+      "top1": 0.559527,
+      "weights": {
+        "elo": 0.0,
+        "goal": 0.1,
+        "pi": 0.9
+      }
+    },
+    "pi_only": {
+      "actual_away_rate": 0.299869,
+      "actual_draw_rate": 0.230223,
+      "actual_home_rate": 0.469908,
+      "avg_pred_away": 0.34864,
+      "avg_pred_draw": 0.18889,
+      "avg_pred_home": 0.46247,
+      "brier": 0.573289,
+      "log_loss": 0.969857,
+      "n_matches": 3805,
+      "rps": 0.197281,
+      "top1": 0.554534,
+      "weights": {
+        "elo": 0.0,
+        "goal": 0.0,
+        "pi": 1.0
+      }
     }
   },
-  "best": "blend_40_60"
+  "sample": "aggregate chronological common sample",
+  "selection_rule": "Selected from aggregate chronological common sample (3,805 matches, 4 blocks). Elo60/Goal40 and Pi30/Elo40/Goal30 tied at aggregate LL=0.918450. Elo60/Goal40 preferred for better draw calibration and Top1 accuracy.",
+  "per_block": {
+    "elo60_goal40": {
+      "weights": {
+        "elo": 0.6,
+        "goal": 0.4,
+        "pi": 0.0
+      },
+      "blocks": {
+        "2014_WC": {
+          "n": 64,
+          "log_loss": 0.983385,
+          "rps": 0.211148,
+          "brier": 0.586471,
+          "top1": 0.5781,
+          "avg_pred_home": 0.427144,
+          "avg_pred_draw": 0.252438,
+          "avg_pred_away": 0.320418,
+          "actual_home": 0.453125,
+          "actual_draw": 0.203125,
+          "actual_away": 0.34375
+        },
+        "2018_WC": {
+          "n": 64,
+          "log_loss": 1.004807,
+          "rps": 0.218432,
+          "brier": 0.601638,
+          "top1": 0.5469,
+          "avg_pred_home": 0.405797,
+          "avg_pred_draw": 0.255619,
+          "avg_pred_away": 0.338584,
+          "actual_home": 0.390625,
+          "actual_draw": 0.203125,
+          "actual_away": 0.40625
+        },
+        "2022_WC": {
+          "n": 64,
+          "log_loss": 1.01454,
+          "rps": 0.214373,
+          "brier": 0.604998,
+          "top1": 0.5,
+          "avg_pred_home": 0.409769,
+          "avg_pred_draw": 0.255562,
+          "avg_pred_away": 0.334669,
+          "actual_home": 0.4375,
+          "actual_draw": 0.234375,
+          "actual_away": 0.328125
+        },
+        "2023_onward": {
+          "n": 3613,
+          "log_loss": 0.917137,
+          "rps": 0.182106,
+          "brier": 0.53743,
+          "top1": 0.5987,
+          "avg_pred_home": 0.44065,
+          "avg_pred_draw": 0.22809,
+          "avg_pred_away": 0.33126,
+          "actual_home": 0.472184,
+          "actual_draw": 0.23111,
+          "actual_away": 0.296706
+        }
+      }
+    },
+    "pi30_elo40_goal30": {
+      "weights": {
+        "pi": 0.3,
+        "elo": 0.4,
+        "goal": 0.3
+      },
+      "blocks": {
+        "2014_WC": {
+          "n": 64,
+          "log_loss": 1.022444,
+          "rps": 0.22537,
+          "brier": 0.615974,
+          "top1": 0.453125
+        },
+        "2018_WC": {
+          "n": 64,
+          "log_loss": 1.013309,
+          "rps": 0.222902,
+          "brier": 0.609141,
+          "top1": 0.515625
+        },
+        "2022_WC": {
+          "n": 64,
+          "log_loss": 0.993876,
+          "rps": 0.207448,
+          "brier": 0.590013,
+          "top1": 0.5
+        },
+        "2023_onward": {
+          "n": 3613,
+          "log_loss": 0.913592,
+          "rps": 0.180848,
+          "brier": 0.53558,
+          "top1": 0.592029
+        }
+      }
+    }
+  }
 }

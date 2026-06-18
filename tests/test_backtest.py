@@ -11,6 +11,8 @@ from soccer_ev_model.goal_model_backtest import (
     HOLDOUT_2018_WC,
     HOLDOUT_2022_WC,
     BacktestMetrics,
+    compute_brier_score,
+    compute_calibration_summary,
     compute_rps,
     run_backtest,
 )
@@ -142,6 +144,46 @@ def test_metrics_hda_calibration():
     assert 0 <= m.draw_calibration <= 1
     assert 0 <= m.away_calibration <= 1
     assert abs(m.home_calibration + m.draw_calibration + m.away_calibration - 1.0) < 0.01
+
+
+def test_multiclass_brier_is_not_rps_for_known_probabilities():
+    """Brier uses class-vector errors and must not be copied from RPS."""
+    probs = np.array([
+        [0.70, 0.20, 0.10],
+        [0.20, 0.60, 0.20],
+        [0.10, 0.30, 0.60],
+    ])
+    outcomes = np.array([0, 1, 2])
+    rps = compute_rps(probs, outcomes)
+    brier = compute_brier_score(probs, outcomes)
+    assert np.isclose(brier, 0.21333333333333337)
+    assert np.isclose(rps, 0.05833333333333335)
+    assert not np.isclose(brier, rps)
+
+
+def test_calibration_summary_depends_on_model_probabilities():
+    """Different probability vectors must produce different calibration summaries."""
+    outcomes = np.array([0, 0, 1, 2])
+    sharp_home_model = np.array([
+        [0.80, 0.10, 0.10],
+        [0.75, 0.15, 0.10],
+        [0.70, 0.20, 0.10],
+        [0.65, 0.20, 0.15],
+    ])
+    balanced_model = np.array([
+        [0.40, 0.30, 0.30],
+        [0.40, 0.30, 0.30],
+        [0.35, 0.35, 0.30],
+        [0.30, 0.30, 0.40],
+    ])
+
+    sharp = compute_calibration_summary(sharp_home_model, outcomes, n_bins=5)
+    balanced = compute_calibration_summary(balanced_model, outcomes, n_bins=5)
+
+    assert sharp["actual_frequency"] == balanced["actual_frequency"]
+    assert sharp["avg_predicted"] != balanced["avg_predicted"]
+    assert sharp["per_outcome_calibration_error"] != balanced["per_outcome_calibration_error"]
+    assert sharp["ece"] != balanced["ece"]
 
 
 def test_metrics_log_loss_positive():

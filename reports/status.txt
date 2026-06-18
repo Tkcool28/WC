@@ -1,3 +1,0 @@
-status=work_in_progress
-phase=1
-dashboard_files_modified=false

@@ -1,147 +1,759 @@
 {
-  "holdout": "2022_WC",
-  "n": 87,
-  "calibration_table": {
-    "away_0.0-0.1": {
-      "count": 2,
-      "avg_pred": 0.041,
-      "actual_freq": 0.5,
-      "cal_error": 0.459
+  "bins": "10 equal-width bins per one-vs-rest outcome probability; ECE weighted over n*3 class-probability observations",
+  "models": {
+    "current_production_blend": {
+      "actual_frequency": {
+        "away": 0.299869,
+        "draw": 0.230223,
+        "home": 0.469908
+      },
+      "avg_predicted": {
+        "away": 0.34864,
+        "draw": 0.18889,
+        "home": 0.46247
+      },
+      "bins": {
+        "away": [
+          {
+            "actual_frequency": 0.070881,
+            "avg_predicted": 0.05485,
+            "bin": "0.0-0.1",
+            "calibration_error": 0.016031,
+            "count": 522
+          },
+          {
+            "actual_frequency": 0.148148,
+            "avg_predicted": 0.151419,
+            "bin": "0.1-0.2",
+            "calibration_error": 0.003271,
+            "count": 621
+          },
+          {
+            "actual_frequency": 0.219215,
+            "avg_predicted": 0.251145,
+            "bin": "0.2-0.3",
+            "calibration_error": 0.03193,
+            "count": 739
+          },
+          {
+            "actual_frequency": 0.311793,
+            "avg_predicted": 0.34483,
+            "bin": "0.3-0.4",
+            "calibration_error": 0.033036,
+            "count": 619
+          },
+          {
+            "actual_frequency": 0.376963,
+            "avg_predicted": 0.450274,
+            "bin": "0.4-0.5",
+            "calibration_error": 0.073311,
+            "count": 382
+          },
+          {
+            "actual_frequency": 0.49026,
+            "avg_predicted": 0.548709,
+            "bin": "0.5-0.6",
+            "calibration_error": 0.058449,
+            "count": 308
+          },
+          {
+            "actual_frequency": 0.485356,
+            "avg_predicted": 0.649863,
+            "bin": "0.6-0.7",
+            "calibration_error": 0.164508,
+            "count": 239
+          },
+          {
+            "actual_frequency": 0.583333,
+            "avg_predicted": 0.750529,
+            "bin": "0.7-0.8",
+            "calibration_error": 0.167196,
+            "count": 168
+          },
+          {
+            "actual_frequency": 0.651515,
+            "avg_predicted": 0.846849,
+            "bin": "0.8-0.9",
+            "calibration_error": 0.195334,
+            "count": 132
+          },
+          {
+            "actual_frequency": 0.826667,
+            "avg_predicted": 0.942269,
+            "bin": "0.9-1.0",
+            "calibration_error": 0.115602,
+            "count": 75
+          }
+        ],
+        "draw": [
+          {
+            "actual_frequency": 0.133721,
+            "avg_predicted": 0.063734,
+            "bin": "0.0-0.1",
+            "calibration_error": 0.069987,
+            "count": 516
+          },
+          {
+            "actual_frequency": 0.236189,
+            "avg_predicted": 0.156183,
+            "bin": "0.1-0.2",
+            "calibration_error": 0.080006,
+            "count": 1249
+          },
+          {
+            "actual_frequency": 0.25098,
+            "avg_predicted": 0.240572,
+            "bin": "0.2-0.3",
+            "calibration_error": 0.010408,
+            "count": 2040
+          }
+        ],
+        "home": [
+          {
+            "actual_frequency": 0.119342,
+            "avg_predicted": 0.056011,
+            "bin": "0.0-0.1",
+            "calibration_error": 0.063331,
+            "count": 243
+          },
+          {
+            "actual_frequency": 0.206897,
+            "avg_predicted": 0.155037,
+            "bin": "0.1-0.2",
+            "calibration_error": 0.05186,
+            "count": 348
+          },
+          {
+            "actual_frequency": 0.26971,
+            "avg_predicted": 0.254252,
+            "bin": "0.2-0.3",
+            "calibration_error": 0.015457,
+            "count": 482
+          },
+          {
+            "actual_frequency": 0.388333,
+            "avg_predicted": 0.354211,
+            "bin": "0.3-0.4",
+            "calibration_error": 0.034122,
+            "count": 600
+          },
+          {
+            "actual_frequency": 0.492647,
+            "avg_predicted": 0.44617,
+            "bin": "0.4-0.5",
+            "calibration_error": 0.046477,
+            "count": 544
+          },
+          {
+            "actual_frequency": 0.56867,
+            "avg_predicted": 0.548111,
+            "bin": "0.5-0.6",
+            "calibration_error": 0.020559,
+            "count": 466
+          },
+          {
+            "actual_frequency": 0.613079,
+            "avg_predicted": 0.64781,
+            "bin": "0.6-0.7",
+            "calibration_error": 0.034731,
+            "count": 367
+          },
+          {
+            "actual_frequency": 0.680982,
+            "avg_predicted": 0.747256,
+            "bin": "0.7-0.8",
+            "calibration_error": 0.066274,
+            "count": 326
+          },
+          {
+            "actual_frequency": 0.771739,
+            "avg_predicted": 0.848837,
+            "bin": "0.8-0.9",
+            "calibration_error": 0.077098,
+            "count": 276
+          },
+          {
+            "actual_frequency": 0.856209,
+            "avg_predicted": 0.936541,
+            "bin": "0.9-1.0",
+            "calibration_error": 0.080332,
+            "count": 153
+          }
+        ]
+      },
+      "ece": 0.045881,
+      "n": 3805,
+      "per_outcome_calibration_error": {
+        "away": 0.048772,
+        "draw": 0.041333,
+        "home": 0.007438
+      }
     },
-    "away_0.1-0.2": {
-      "count": 10,
-      "avg_pred": 0.1626,
-      "actual_freq": 0.1,
-      "cal_error": 0.0626
+    "elo": {
+      "actual_frequency": {
+        "away": 0.299869,
+        "draw": 0.230223,
+        "home": 0.469908
+      },
+      "avg_predicted": {
+        "away": 0.337143,
+        "draw": 0.22267,
+        "home": 0.440186
+      },
+      "bins": {
+        "away": [
+          {
+            "actual_frequency": 0.065217,
+            "avg_predicted": 0.070298,
+            "bin": "0.0-0.1",
+            "calibration_error": 0.005081,
+            "count": 92
+          },
+          {
+            "actual_frequency": 0.045763,
+            "avg_predicted": 0.157821,
+            "bin": "0.1-0.2",
+            "calibration_error": 0.112058,
+            "count": 590
+          },
+          {
+            "actual_frequency": 0.148459,
+            "avg_predicted": 0.251573,
+            "bin": "0.2-0.3",
+            "calibration_error": 0.103113,
+            "count": 1071
+          },
+          {
+            "actual_frequency": 0.325879,
+            "avg_predicted": 0.342365,
+            "bin": "0.3-0.4",
+            "calibration_error": 0.016486,
+            "count": 939
+          },
+          {
+            "actual_frequency": 0.46824,
+            "avg_predicted": 0.447526,
+            "bin": "0.4-0.5",
+            "calibration_error": 0.020714,
+            "count": 551
+          },
+          {
+            "actual_frequency": 0.595238,
+            "avg_predicted": 0.544707,
+            "bin": "0.5-0.6",
+            "calibration_error": 0.050531,
+            "count": 294
+          },
+          {
+            "actual_frequency": 0.741176,
+            "avg_predicted": 0.643832,
+            "bin": "0.6-0.7",
+            "calibration_error": 0.097344,
+            "count": 170
+          },
+          {
+            "actual_frequency": 0.865672,
+            "avg_predicted": 0.747596,
+            "bin": "0.7-0.8",
+            "calibration_error": 0.118076,
+            "count": 67
+          },
+          {
+            "actual_frequency": 0.83871,
+            "avg_predicted": 0.840718,
+            "bin": "0.8-0.9",
+            "calibration_error": 0.002008,
+            "count": 31
+          }
+        ],
+        "draw": [
+          {
+            "actual_frequency": 0.079365,
+            "avg_predicted": 0.082842,
+            "bin": "0.0-0.1",
+            "calibration_error": 0.003477,
+            "count": 63
+          },
+          {
+            "actual_frequency": 0.116226,
+            "avg_predicted": 0.167106,
+            "bin": "0.1-0.2",
+            "calibration_error": 0.050881,
+            "count": 869
+          },
+          {
+            "actual_frequency": 0.268013,
+            "avg_predicted": 0.242543,
+            "bin": "0.2-0.3",
+            "calibration_error": 0.02547,
+            "count": 2873
+          }
+        ],
+        "home": [
+          {
+            "actual_frequency": 0.170732,
+            "avg_predicted": 0.075302,
+            "bin": "0.0-0.1",
+            "calibration_error": 0.09543,
+            "count": 41
+          },
+          {
+            "actual_frequency": 0.104712,
+            "avg_predicted": 0.159173,
+            "bin": "0.1-0.2",
+            "calibration_error": 0.054461,
+            "count": 191
+          },
+          {
+            "actual_frequency": 0.170874,
+            "avg_predicted": 0.25707,
+            "bin": "0.2-0.3",
+            "calibration_error": 0.086196,
+            "count": 515
+          },
+          {
+            "actual_frequency": 0.298774,
+            "avg_predicted": 0.353909,
+            "bin": "0.3-0.4",
+            "calibration_error": 0.055135,
+            "count": 897
+          },
+          {
+            "actual_frequency": 0.504122,
+            "avg_predicted": 0.445435,
+            "bin": "0.4-0.5",
+            "calibration_error": 0.058687,
+            "count": 849
+          },
+          {
+            "actual_frequency": 0.654962,
+            "avg_predicted": 0.547652,
+            "bin": "0.5-0.6",
+            "calibration_error": 0.10731,
+            "count": 655
+          },
+          {
+            "actual_frequency": 0.815085,
+            "avg_predicted": 0.647386,
+            "bin": "0.6-0.7",
+            "calibration_error": 0.167699,
+            "count": 411
+          },
+          {
+            "actual_frequency": 0.888889,
+            "avg_predicted": 0.737706,
+            "bin": "0.7-0.8",
+            "calibration_error": 0.151183,
+            "count": 180
+          },
+          {
+            "actual_frequency": 0.8,
+            "avg_predicted": 0.839457,
+            "bin": "0.8-0.9",
+            "calibration_error": 0.039457,
+            "count": 60
+          },
+          {
+            "actual_frequency": 0.833333,
+            "avg_predicted": 0.909396,
+            "bin": "0.9-1.0",
+            "calibration_error": 0.076063,
+            "count": 6
+          }
+        ]
+      },
+      "ece": 0.060283,
+      "n": 3805,
+      "per_outcome_calibration_error": {
+        "away": 0.037275,
+        "draw": 0.007553,
+        "home": 0.029722
+      }
     },
-    "away_0.2-0.3": {
-      "count": 28,
-      "avg_pred": 0.2507,
-      "actual_freq": 0.25,
-      "cal_error": 0.0007
+    "goal": {
+      "actual_frequency": {
+        "away": 0.299869,
+        "draw": 0.230223,
+        "home": 0.469908
+      },
+      "avg_predicted": {
+        "away": 0.322577,
+        "draw": 0.235367,
+        "home": 0.442056
+      },
+      "bins": {
+        "away": [
+          {
+            "actual_frequency": 0.020833,
+            "avg_predicted": 0.067035,
+            "bin": "0.0-0.1",
+            "calibration_error": 0.046201,
+            "count": 192
+          },
+          {
+            "actual_frequency": 0.105644,
+            "avg_predicted": 0.157118,
+            "bin": "0.1-0.2",
+            "calibration_error": 0.051474,
+            "count": 691
+          },
+          {
+            "actual_frequency": 0.195414,
+            "avg_predicted": 0.250616,
+            "bin": "0.2-0.3",
+            "calibration_error": 0.055202,
+            "count": 1003
+          },
+          {
+            "actual_frequency": 0.322543,
+            "avg_predicted": 0.346743,
+            "bin": "0.3-0.4",
+            "calibration_error": 0.024199,
+            "count": 865
+          },
+          {
+            "actual_frequency": 0.430939,
+            "avg_predicted": 0.446064,
+            "bin": "0.4-0.5",
+            "calibration_error": 0.015124,
+            "count": 543
+          },
+          {
+            "actual_frequency": 0.59727,
+            "avg_predicted": 0.542524,
+            "bin": "0.5-0.6",
+            "calibration_error": 0.054746,
+            "count": 293
+          },
+          {
+            "actual_frequency": 0.792308,
+            "avg_predicted": 0.646895,
+            "bin": "0.6-0.7",
+            "calibration_error": 0.145413,
+            "count": 130
+          },
+          {
+            "actual_frequency": 0.830189,
+            "avg_predicted": 0.741955,
+            "bin": "0.7-0.8",
+            "calibration_error": 0.088234,
+            "count": 53
+          },
+          {
+            "actual_frequency": 0.935484,
+            "avg_predicted": 0.850108,
+            "bin": "0.8-0.9",
+            "calibration_error": 0.085376,
+            "count": 31
+          },
+          {
+            "actual_frequency": 1.0,
+            "avg_predicted": 0.930407,
+            "bin": "0.9-1.0",
+            "calibration_error": 0.069593,
+            "count": 4
+          }
+        ],
+        "draw": [
+          {
+            "actual_frequency": 0.054795,
+            "avg_predicted": 0.071979,
+            "bin": "0.0-0.1",
+            "calibration_error": 0.017184,
+            "count": 73
+          },
+          {
+            "actual_frequency": 0.106667,
+            "avg_predicted": 0.167482,
+            "bin": "0.1-0.2",
+            "calibration_error": 0.060816,
+            "count": 600
+          },
+          {
+            "actual_frequency": 0.256385,
+            "avg_predicted": 0.249839,
+            "bin": "0.2-0.3",
+            "calibration_error": 0.006545,
+            "count": 3015
+          },
+          {
+            "actual_frequency": 0.299145,
+            "avg_predicted": 0.31249,
+            "bin": "0.3-0.4",
+            "calibration_error": 0.013344,
+            "count": 117
+          }
+        ],
+        "home": [
+          {
+            "actual_frequency": 0.031746,
+            "avg_predicted": 0.065098,
+            "bin": "0.0-0.1",
+            "calibration_error": 0.033352,
+            "count": 63
+          },
+          {
+            "actual_frequency": 0.108491,
+            "avg_predicted": 0.157502,
+            "bin": "0.1-0.2",
+            "calibration_error": 0.049012,
+            "count": 212
+          },
+          {
+            "actual_frequency": 0.231729,
+            "avg_predicted": 0.253874,
+            "bin": "0.2-0.3",
+            "calibration_error": 0.022144,
+            "count": 561
+          },
+          {
+            "actual_frequency": 0.362914,
+            "avg_predicted": 0.352363,
+            "bin": "0.3-0.4",
+            "calibration_error": 0.010551,
+            "count": 755
+          },
+          {
+            "actual_frequency": 0.453349,
+            "avg_predicted": 0.448867,
+            "bin": "0.4-0.5",
+            "calibration_error": 0.004482,
+            "count": 836
+          },
+          {
+            "actual_frequency": 0.619677,
+            "avg_predicted": 0.546713,
+            "bin": "0.5-0.6",
+            "calibration_error": 0.072964,
+            "count": 681
+          },
+          {
+            "actual_frequency": 0.75,
+            "avg_predicted": 0.644206,
+            "bin": "0.6-0.7",
+            "calibration_error": 0.105794,
+            "count": 416
+          },
+          {
+            "actual_frequency": 0.852459,
+            "avg_predicted": 0.743421,
+            "bin": "0.7-0.8",
+            "calibration_error": 0.109038,
+            "count": 183
+          },
+          {
+            "actual_frequency": 0.905405,
+            "avg_predicted": 0.840383,
+            "bin": "0.8-0.9",
+            "calibration_error": 0.065022,
+            "count": 74
+          },
+          {
+            "actual_frequency": 0.958333,
+            "avg_predicted": 0.92851,
+            "bin": "0.9-1.0",
+            "calibration_error": 0.029824,
+            "count": 24
+          }
+        ]
+      },
+      "ece": 0.033845,
+      "n": 3805,
+      "per_outcome_calibration_error": {
+        "away": 0.022709,
+        "draw": 0.005144,
+        "home": 0.027852
+      }
     },
-    "away_0.3-0.4": {
-      "count": 26,
-      "avg_pred": 0.3485,
-      "actual_freq": 0.2308,
-      "cal_error": 0.1177
-    },
-    "away_0.4-0.5": {
-      "count": 13,
-      "avg_pred": 0.4464,
-      "actual_freq": 0.5385,
-      "cal_error": 0.0921
-    },
-    "away_0.5-0.6": {
-      "count": 6,
-      "avg_pred": 0.5449,
-      "actual_freq": 0.6667,
-      "cal_error": 0.1217
-    },
-    "away_0.6-0.7": {
-      "count": 2,
-      "avg_pred": 0.6268,
-      "actual_freq": 1.0,
-      "cal_error": 0.3732
-    },
-    "draw_0.0-0.1": {
-      "count": 2,
-      "avg_pred": 0.0864,
-      "actual_freq": 0.0,
-      "cal_error": 0.0864
-    },
-    "draw_0.1-0.2": {
-      "count": 4,
-      "avg_pred": 0.1761,
-      "actual_freq": 0.0,
-      "cal_error": 0.1761
-    },
-    "draw_0.2-0.3": {
-      "count": 60,
-      "avg_pred": 0.2664,
-      "actual_freq": 0.25,
-      "cal_error": 0.0164
-    },
-    "draw_0.3-0.4": {
-      "count": 21,
-      "avg_pred": 0.3174,
-      "actual_freq": 0.2857,
-      "cal_error": 0.0317
-    },
-    "home_0.1-0.2": {
-      "count": 5,
-      "avg_pred": 0.168,
-      "actual_freq": 0.2,
-      "cal_error": 0.032
-    },
-    "home_0.2-0.3": {
-      "count": 19,
-      "avg_pred": 0.2629,
-      "actual_freq": 0.3158,
-      "cal_error": 0.0529
-    },
-    "home_0.3-0.4": {
-      "count": 22,
-      "avg_pred": 0.3569,
-      "actual_freq": 0.4091,
-      "cal_error": 0.0522
-    },
-    "home_0.4-0.5": {
-      "count": 20,
-      "avg_pred": 0.4441,
-      "actual_freq": 0.45,
-      "cal_error": 0.0059
-    },
-    "home_0.5-0.6": {
-      "count": 14,
-      "avg_pred": 0.5482,
-      "actual_freq": 0.5,
-      "cal_error": 0.0482
-    },
-    "home_0.6-0.7": {
-      "count": 3,
-      "avg_pred": 0.6386,
-      "actual_freq": 1.0,
-      "cal_error": 0.3614
-    },
-    "home_0.7-0.8": {
-      "count": 2,
-      "avg_pred": 0.7278,
-      "actual_freq": 1.0,
-      "cal_error": 0.2722
-    },
-    "home_0.8-0.9": {
-      "count": 2,
-      "avg_pred": 0.8726,
-      "actual_freq": 0.5,
-      "cal_error": 0.3726
+    "pi": {
+      "actual_frequency": {
+        "away": 0.299869,
+        "draw": 0.230223,
+        "home": 0.469908
+      },
+      "avg_predicted": {
+        "away": 0.34864,
+        "draw": 0.18889,
+        "home": 0.46247
+      },
+      "bins": {
+        "away": [
+          {
+            "actual_frequency": 0.070881,
+            "avg_predicted": 0.05485,
+            "bin": "0.0-0.1",
+            "calibration_error": 0.016031,
+            "count": 522
+          },
+          {
+            "actual_frequency": 0.148148,
+            "avg_predicted": 0.151419,
+            "bin": "0.1-0.2",
+            "calibration_error": 0.003271,
+            "count": 621
+          },
+          {
+            "actual_frequency": 0.219215,
+            "avg_predicted": 0.251145,
+            "bin": "0.2-0.3",
+            "calibration_error": 0.03193,
+            "count": 739
+          },
+          {
+            "actual_frequency": 0.311793,
+            "avg_predicted": 0.34483,
+            "bin": "0.3-0.4",
+            "calibration_error": 0.033036,
+            "count": 619
+          },
+          {
+            "actual_frequency": 0.376963,
+            "avg_predicted": 0.450274,
+            "bin": "0.4-0.5",
+            "calibration_error": 0.073311,
+            "count": 382
+          },
+          {
+            "actual_frequency": 0.49026,
+            "avg_predicted": 0.548709,
+            "bin": "0.5-0.6",
+            "calibration_error": 0.058449,
+            "count": 308
+          },
+          {
+            "actual_frequency": 0.485356,
+            "avg_predicted": 0.649863,
+            "bin": "0.6-0.7",
+            "calibration_error": 0.164508,
+            "count": 239
+          },
+          {
+            "actual_frequency": 0.583333,
+            "avg_predicted": 0.750529,
+            "bin": "0.7-0.8",
+            "calibration_error": 0.167196,
+            "count": 168
+          },
+          {
+            "actual_frequency": 0.651515,
+            "avg_predicted": 0.846849,
+            "bin": "0.8-0.9",
+            "calibration_error": 0.195334,
+            "count": 132
+          },
+          {
+            "actual_frequency": 0.826667,
+            "avg_predicted": 0.942269,
+            "bin": "0.9-1.0",
+            "calibration_error": 0.115602,
+            "count": 75
+          }
+        ],
+        "draw": [
+          {
+            "actual_frequency": 0.133721,
+            "avg_predicted": 0.063734,
+            "bin": "0.0-0.1",
+            "calibration_error": 0.069987,
+            "count": 516
+          },
+          {
+            "actual_frequency": 0.236189,
+            "avg_predicted": 0.156183,
+            "bin": "0.1-0.2",
+            "calibration_error": 0.080006,
+            "count": 1249
+          },
+          {
+            "actual_frequency": 0.25098,
+            "avg_predicted": 0.240572,
+            "bin": "0.2-0.3",
+            "calibration_error": 0.010408,
+            "count": 2040
+          }
+        ],
+        "home": [
+          {
+            "actual_frequency": 0.119342,
+            "avg_predicted": 0.056011,
+            "bin": "0.0-0.1",
+            "calibration_error": 0.063331,
+            "count": 243
+          },
+          {
+            "actual_frequency": 0.206897,
+            "avg_predicted": 0.155037,
+            "bin": "0.1-0.2",
+            "calibration_error": 0.05186,
+            "count": 348
+          },
+          {
+            "actual_frequency": 0.26971,
+            "avg_predicted": 0.254252,
+            "bin": "0.2-0.3",
+            "calibration_error": 0.015457,
+            "count": 482
+          },
+          {
+            "actual_frequency": 0.388333,
+            "avg_predicted": 0.354211,
+            "bin": "0.3-0.4",
+            "calibration_error": 0.034122,
+            "count": 600
+          },
+          {
+            "actual_frequency": 0.492647,
+            "avg_predicted": 0.44617,
+            "bin": "0.4-0.5",
+            "calibration_error": 0.046477,
+            "count": 544
+          },
+          {
+            "actual_frequency": 0.56867,
+            "avg_predicted": 0.548111,
+            "bin": "0.5-0.6",
+            "calibration_error": 0.020559,
+            "count": 466
+          },
+          {
+            "actual_frequency": 0.613079,
+            "avg_predicted": 0.64781,
+            "bin": "0.6-0.7",
+            "calibration_error": 0.034731,
+            "count": 367
+          },
+          {
+            "actual_frequency": 0.680982,
+            "avg_predicted": 0.747256,
+            "bin": "0.7-0.8",
+            "calibration_error": 0.066274,
+            "count": 326
+          },
+          {
+            "actual_frequency": 0.771739,
+            "avg_predicted": 0.848837,
+            "bin": "0.8-0.9",
+            "calibration_error": 0.077098,
+            "count": 276
+          },
+          {
+            "actual_frequency": 0.856209,
+            "avg_predicted": 0.936541,
+            "bin": "0.9-1.0",
+            "calibration_error": 0.080332,
+            "count": 153
+          }
+        ]
+      },
+      "ece": 0.045881,
+      "n": 3805,
+      "per_outcome_calibration_error": {
+        "away": 0.048772,
+        "draw": 0.041333,
+        "home": 0.007438
+      }
     }
   },
-  "reliability_by_confidence": {
-    "0.40_0.50": {
-      "count": 33,
-      "avg_top_prob": 0.445,
-      "top_pick_accuracy": 0.4848
-    },
-    "0.50_0.60": {
-      "count": 20,
-      "avg_top_prob": 0.5472,
-      "top_pick_accuracy": 0.55
-    },
-    "0.60_0.70": {
-      "count": 5,
-      "avg_top_prob": 0.6339,
-      "top_pick_accuracy": 1.0
-    },
-    "above_0.70": {
-      "count": 4,
-      "avg_top_prob": 0.8002,
-      "top_pick_accuracy": 0.75
-    },
-    "below_0.40": {
-      "count": 25,
-      "avg_top_prob": 0.3761,
-      "top_pick_accuracy": 0.4
-    }
-  }
+  "n_common": 3805,
+  "sample": "aggregate chronological common sample"
 }

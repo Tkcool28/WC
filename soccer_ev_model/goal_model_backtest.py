@@ -141,6 +141,85 @@ def compute_rps(probs: np.ndarray, outcomes: np.ndarray) -> float:
     return float(rps)
 
 
+def compute_brier_score(probs: np.ndarray, outcomes: np.ndarray) -> float:
+    """Compute multiclass Brier score for H/D/A probabilities.
+
+    Formula: mean(sum((predicted_probability - one_hot_actual)^2 across
+    home/draw/away)). This is intentionally not RPS; RPS operates on
+    cumulative ordinal probabilities while Brier scores the class vector.
+    """
+    n = len(outcomes)
+    if n == 0:
+        return 0.0
+    one_hot = np.zeros_like(probs)
+    one_hot[np.arange(n), outcomes] = 1.0
+    return float(np.mean(np.sum((probs - one_hot) ** 2, axis=1)))
+
+
+def compute_calibration_summary(
+    probs: np.ndarray,
+    outcomes: np.ndarray,
+    n_bins: int = 10,
+) -> dict:
+    """Return per-outcome calibration and ECE for H/D/A probabilities.
+
+    ECE is computed over all one-vs-rest outcome probabilities. Each class
+    probability contributes to a fixed-width probability bin, weighted by the
+    number of class-probability observations in that bin (denominator n * 3).
+    """
+    labels = ["home", "draw", "away"]
+    n = len(outcomes)
+    if n == 0:
+        return {
+            "n": 0,
+            "ece": 0.0,
+            "avg_predicted": {label: 0.0 for label in labels},
+            "actual_frequency": {label: 0.0 for label in labels},
+            "per_outcome_calibration_error": {label: 0.0 for label in labels},
+            "bins": {label: [] for label in labels},
+        }
+
+    avg_pred = {label: float(np.mean(probs[:, idx])) for idx, label in enumerate(labels)}
+    actual_freq = {label: float(np.mean(outcomes == idx)) for idx, label in enumerate(labels)}
+    outcome_error = {label: abs(avg_pred[label] - actual_freq[label]) for label in labels}
+
+    bins_by_label: dict[str, list[dict]] = {label: [] for label in labels}
+    weighted_abs_error = 0.0
+    total_class_obs = n * len(labels)
+
+    for idx, label in enumerate(labels):
+        for bin_idx in range(n_bins):
+            lo = bin_idx / n_bins
+            hi = (bin_idx + 1) / n_bins
+            if bin_idx == n_bins - 1:
+                mask = (probs[:, idx] >= lo) & (probs[:, idx] <= hi)
+            else:
+                mask = (probs[:, idx] >= lo) & (probs[:, idx] < hi)
+            count = int(np.sum(mask))
+            if count == 0:
+                continue
+            avg_bin_pred = float(np.mean(probs[mask, idx]))
+            bin_actual = float(np.mean(outcomes[mask] == idx))
+            error = abs(avg_bin_pred - bin_actual)
+            weighted_abs_error += count * error
+            bins_by_label[label].append({
+                "bin": f"{lo:.1f}-{hi:.1f}",
+                "count": count,
+                "avg_predicted": avg_bin_pred,
+                "actual_frequency": bin_actual,
+                "calibration_error": error,
+            })
+
+    return {
+        "n": n,
+        "ece": float(weighted_abs_error / total_class_obs),
+        "avg_predicted": avg_pred,
+        "actual_frequency": actual_freq,
+        "per_outcome_calibration_error": outcome_error,
+        "bins": bins_by_label,
+    }
+
+
 def compute_metrics(
     predictions: list[dict],
     actuals_hg: list[int],
@@ -183,9 +262,7 @@ def compute_metrics(
     m.ranked_probability_score = compute_rps(probs, outcomes)
 
     # Brier score (multiclass)
-    one_hot = np.zeros_like(probs)
-    one_hot[np.arange(n), outcomes] = 1.0
-    m.brier_score = float(np.mean(np.sum((probs - one_hot) ** 2, axis=1)))
+    m.brier_score = compute_brier_score(probs, outcomes)
 
     # Top-pick accuracy
     top_picks = np.argmax(probs, axis=1)

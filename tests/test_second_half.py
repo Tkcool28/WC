@@ -665,6 +665,54 @@ class TestGoalModelPredictor:
         assert pred.data_cutoff != ""
         assert pred.model_version != ""
 
+    def test_stage_coefficient_changes_prediction_and_zero_reproduces_base(self, fitted_model, sample_train_matches):
+        from soccer_ev_model.goal_model_production import build_artifact, GoalModelPredictor
+        from soccer_ev_model.goal_model_stage import StageContext
+
+        stage = StageContext(
+            is_knockout=False,
+            is_final_group_match=False,
+            is_qualifier=False,
+            is_friendly=False,
+            is_world_cup=True,
+            is_neutral=True,
+            stage="group_stage",
+            is_group_stage=True,
+            is_early_group=True,
+            is_final_group=False,
+        )
+        base_artifact = build_artifact(model=fitted_model, matches=sample_train_matches)
+        zero_stage_artifact = build_artifact(
+            model=fitted_model,
+            matches=sample_train_matches,
+            stage_group_adj=0.0,
+            stage_knockout_adj=0.0,
+            stage_final_group_adj=0.0,
+        )
+        nonzero_stage_artifact = build_artifact(
+            model=fitted_model,
+            matches=sample_train_matches,
+            stage_group_adj=0.15,
+            stage_knockout_adj=0.0,
+            stage_final_group_adj=0.0,
+        )
+
+        base = GoalModelPredictor(base_artifact).predict(1, 2, "2023-06-01", neutral=True)
+        zero = GoalModelPredictor(zero_stage_artifact).predict(
+            1, 2, "2023-06-01", neutral=True, stage_context=stage
+        )
+        changed = GoalModelPredictor(nonzero_stage_artifact).predict(
+            1, 2, "2023-06-01", neutral=True, stage_context=stage
+        )
+
+        assert zero.home_xg == pytest.approx(base.home_xg)
+        assert zero.away_xg == pytest.approx(base.away_xg)
+        assert zero.hda_probs == pytest.approx(base.hda_probs)
+        assert changed.home_xg != pytest.approx(base.home_xg)
+        assert changed.away_xg != pytest.approx(base.away_xg)
+        assert changed.hda_probs != pytest.approx(base.hda_probs)
+        assert changed.stage_context_flags == ["stage_adj=0.1500"]
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # LEAKAGE TESTS
