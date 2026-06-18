@@ -72,9 +72,9 @@
 ## 4. Calibration (Elo60/Goal40)
 
 ### Model ECE (Expected Calibration Error)
-- **Elo60/Goal40 aggregate:** TBD (blend calibration not independently computed)
+- **Elo60/Goal40 aggregate:** not separately computed in the trusted audit (blend calibration requires per-blend bins from the grid results)
 - **Elo-only ECE:** 0.0603 (aggregate)
-- **Goal-only ECE:** TBD from calibration bin data
+- **Goal-only ECE:** 0.0338 (aggregate)
 - **Method:** 10 equal-width bins per one-vs-rest outcome probability; ECE weighted over n×3 observations
 
 ### Calibration: Predicted vs Actual H/D/A (Elo60/Goal40)
@@ -167,7 +167,7 @@ Rationale:
 ## 9. Test Results
 
 - **Focused tests (goal model, backtest, second half):** 129 passed in 1.59s
-- **Full suite:** Run after merge — see Phase 3 verification
+- **Full suite:** 735 passed, 0 failed
 - **No dashboard files changed**
 - **soccer_ev_model/ev_workflow.py unchanged relative to current main**
 
