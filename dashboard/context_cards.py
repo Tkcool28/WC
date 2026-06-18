@@ -32,14 +32,21 @@ The cards read from ``st.session_state`` via the namespaced keys in
 absent, so the cards render the calm placeholder copy.  Once the user
 clicks "Show Predictions" the session state populates and the cards
 re-render with real data.
+
+Phase 9 (dashboard autoload) adds :func:`autoload_context_for_date`
+and its pure helper :func:`_autoload_pure` so the cards populate on
+page open *without* requiring the user to click "Show Predictions".
+The helper writes to the same keys the per-view renderers already
+read, so the existing cards remain the single source of truth.
 """
 from __future__ import annotations
 
 from datetime import date as _date
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import streamlit as st
 
+from dashboard.session_state import KEYS
 from dashboard.text_format import (
     format_group_label as _format_group_label,
     format_matchday_label as _format_matchday_label,
@@ -447,3 +454,369 @@ def render_highest_confidence(confidence: Optional[dict]) -> None:
     # the "model probability only" disclaimer at the same eye level
     # as the number itself.
     st.caption(_CONFIDENCE_DISCLAIMER_TEXT)
+
+
+# --------------------------------------------------------------------------- #
+# Autoload helpers (Phase 9 — dashboard context cards populate on page open)
+# --------------------------------------------------------------------------- #
+def _fallback_prediction(
+    home: str,
+    away: str,
+    home_id: Any,
+    away_id: Any,
+    picked_iso: str,
+    exc: BaseException,
+    *,
+    canonical_home_id: str = "",
+    canonical_away_id: str = "",
+    identity_warnings: Optional[list[str]] = None,
+) -> dict:
+    """Build the same fallback dict shape the Predictions view uses.
+
+    Mirrors the body of the ``except Exception`` branch in
+    :func:`dashboard.app._render_predictions_view` (lines 1710-1736):
+    neutral 0.40 / 0.30 / 0.30 probs, a tier-C ``confidence`` block
+    with the error message, and the same identity-resolution metadata
+    fields so the rest of the dashboard can read the prediction
+    without special-casing.
+
+    Kept here (not in app.py) so the autoload pure helper can build
+    the same shape without importing the Streamlit-bound renderer.
+    """
+    return {
+        "home_team": home,
+        "away_team": away,
+        "home_team_id": int(home_id) if home_id is not None else 0,
+        "away_team_id": int(away_id) if away_id is not None else 0,
+        "date": picked_iso,
+        "pi_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+        "blend_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+        "pi_only_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+        "elo_only_probs": None,
+        "blend_was_used": False,
+        "confidence": {
+            "tier": "C",
+            "tier_description": "Limited data",
+            "warnings": [f"prediction error: {exc!s}"],
+        },
+        "banner": "Limited data",
+        "canonical_home_id": canonical_home_id,
+        "canonical_away_id": canonical_away_id,
+        "identity_warnings": list(identity_warnings or []),
+    }
+
+
+def _autoload_pure(
+    date_iso: str,
+    corpus: list[dict],
+    elo_snapshots: Any,
+    *,
+    load_unplayed_fn: Callable[[str], list[dict]],
+    predict_match_fn: Callable[..., dict],
+    resolve_match_fn: Optional[Callable[..., tuple]] = None,
+    get_ratings_fn: Optional[Callable[..., dict]] = None,
+    cutoff_iso_override: Optional[str] = None,
+) -> dict:
+    """Pure helper that builds the autoload payload for ``date_iso``.
+
+    Returns a dict with keys:
+
+    * ``matches`` — ``list[dict]`` from ``load_unplayed_fn(date_iso)``.
+      Empty list when the schedule has nothing on this date.
+    * ``predictions`` — ``dict[int, dict]`` keyed by match_id; one
+      :func:`dashboard.app._predict_match_cached` result per match, or
+      a tier-C fallback dict when ``predict_match_fn`` raises for a
+      single match (per the existing per-view fallback rule).
+    * ``ratings_id`` / ``elo_id`` / ``corpus_id`` — small integer
+      handles so the caller can register them in the module-level
+      ``_RATINGS_BY_ID`` / ``_ELO_BY_ID`` / ``_CORPUS_BY_ID`` dicts
+      used by :func:`dashboard.app._predict_match_cached`.
+    * ``date_iso`` — echoed for the caller's convenience.
+    * ``ratings_cutoff_iso`` — the cutoff ISO string actually used for
+      the pi-ratings snapshot (whichever of ``date_iso + T23:59:59Z``
+      and ``date_iso + T00:00:00Z`` succeeded).
+
+    All side-effects (Streamlit session state, module-level registries)
+    are the *caller's* responsibility.  This makes the heavy lifting
+    unit-testable without a Streamlit ScriptRun.
+
+    Parameters
+    ----------
+    date_iso
+        ``"YYYY-MM-DD"`` ISO date string.  No validation beyond
+        string-concatenation; callers should ensure it matches the
+        loader's format.
+    corpus, elo_snapshots
+        The same data structures the per-view renderers hold.  Passed
+        through only so the caller can compute ``id(...)`` handles
+        without re-importing the registries.
+    load_unplayed_fn
+        Callable taking ``(date_iso,)`` and returning a list of match
+        dicts.  In production this is
+        :func:`dashboard.app._load_unplayed_for_date`.
+    predict_match_fn
+        Callable matching the per-view signature
+        ``(home_team, away_team, home_team_id, away_team_id,
+        date_iso, _ratings_id, _elo_snapshots_id, _corpus_id) -> dict``.
+        In production this is
+        :func:`dashboard.app._predict_match_cached`.
+    resolve_match_fn
+        Optional ``(match, ratings, name_to_id) -> (home_res,
+        away_res, warnings)`` resolver.  In production this is
+        :func:`dashboard.app._resolve_match_for_prediction`.  When
+        ``None`` we treat ``canonical_home_id`` / ``canonical_away_id``
+        as empty strings and skip the corpus-id translation.
+    get_ratings_fn
+        Optional ``(cutoff_iso, corpus) -> dict``.  In production this
+        is :func:`dashboard.app.get_ratings`.  When ``None`` we skip
+        the cutoff-cutoff two-pass logic and use a 0-id handle (the
+        tests typically don't need a real ratings dict).
+    cutoff_iso_override
+        Test-only knob: when set, use this exact cutoff string instead
+        of ``date_iso + "T23:59:59Z"``.  Production callers leave it
+        ``None``.
+    """
+    matches = list(load_unplayed_fn(date_iso) or [])
+    if not matches:
+        return {
+            "matches": [],
+            "predictions": {},
+            "ratings_id": 0,
+            "elo_id": id(elo_snapshots) if elo_snapshots is not None else 0,
+            "corpus_id": id(corpus) if corpus is not None else 0,
+            "date_iso": date_iso,
+            "ratings_cutoff_iso": (cutoff_iso_override or (date_iso + "T23:59:59Z")),
+        }
+
+    # ---- Build the pi-ratings snapshot (mirrors the per-view logic) ---- #
+    ratings: dict = {}
+    ratings_cutoff_iso = cutoff_iso_override or (date_iso + "T23:59:59Z")
+    if get_ratings_fn is not None:
+        try:
+            ratings = get_ratings_fn(ratings_cutoff_iso, corpus)
+        except Exception:
+            ratings_cutoff_iso = date_iso + "T00:00:00Z"
+            try:
+                ratings = get_ratings_fn(ratings_cutoff_iso, corpus)
+            except Exception:
+                # Even the fallback failed; proceed with an empty
+                # ratings dict. _predict_match_cached tolerates this
+                # (and our per-match try/except handles anything that
+                # still goes wrong).
+                ratings = {}
+    ratings_id = id(ratings)
+
+    elo_id = id(elo_snapshots) if elo_snapshots is not None else 0
+    corpus_id = id(corpus) if corpus is not None else 0
+
+    # ---- Per-match prediction (mirrors the per-view logic) ---- #
+    match_cutoff = date_iso + "T00:00:00Z"
+    predictions: dict[int, dict] = {}
+    for m in matches:
+        if not isinstance(m, dict):
+            continue
+        mid = m.get("match_id")
+        if mid is None:
+            continue
+        try:
+            mid_int = int(mid)
+        except (TypeError, ValueError):
+            continue
+
+        home = m.get("home_team_name") or "Home"
+        away = m.get("away_team_name") or "Away"
+        home_id = m.get("home_team_id")
+        away_id = m.get("away_team_id")
+
+        # Identity resolution (translate schedule ids → corpus ids).
+        _home_res = _away_res = None
+        _id_warnings: list[str] = []
+        if resolve_match_fn is not None and home_id is not None and away_id is not None:
+            try:
+                _home_res, _away_res, _id_warnings = resolve_match_fn(
+                    match=m, ratings=ratings, name_to_id=None,
+                )
+            except Exception:
+                _home_res = _away_res = None
+                _id_warnings = []
+
+        # Translate to corpus ids when resolved, else fall back to schedule ids.
+        home_corpus_id = (
+            int(_home_res.corpus_id) if (_home_res is not None and _home_res.corpus_id is not None)
+            else (int(home_id) if home_id is not None else 0)
+        )
+        away_corpus_id = (
+            int(_away_res.corpus_id) if (_away_res is not None and _away_res.corpus_id is not None)
+            else (int(away_id) if away_id is not None else 0)
+        )
+
+        try:
+            pred = predict_match_fn(
+                home_team=home,
+                away_team=away,
+                home_team_id=home_corpus_id,
+                away_team_id=away_corpus_id,
+                date_iso=match_cutoff,
+                _ratings_id=ratings_id,
+                _elo_snapshots_id=elo_id,
+                _corpus_id=corpus_id,
+            )
+        except Exception as exc:
+            pred = _fallback_prediction(
+                home=home,
+                away=away,
+                home_id=home_corpus_id,
+                away_id=away_corpus_id,
+                picked_iso=date_iso,
+                exc=exc,
+                canonical_home_id=(
+                    _home_res.canonical_id if _home_res is not None else ""
+                ),
+                canonical_away_id=(
+                    _away_res.canonical_id if _away_res is not None else ""
+                ),
+                identity_warnings=_id_warnings,
+            )
+        else:
+            # Surface identity metadata the same way the per-view renderer does.
+            if _id_warnings:
+                pred["identity_warnings"] = list(_id_warnings)
+            if not pred.get("canonical_home_id") and _home_res is not None and _home_res.canonical_id:
+                pred["canonical_home_id"] = _home_res.canonical_id
+            if not pred.get("canonical_away_id") and _away_res is not None and _away_res.canonical_id:
+                pred["canonical_away_id"] = _away_res.canonical_id
+
+        # Surface the source-match metadata so per-match renderers can read
+        # the human-readable kickoff / group / stage labels.
+        pred["_match_meta"] = {
+            "group": m.get("group", ""),
+            "stage": m.get("stage", ""),
+            "matchday": m.get("matchday"),
+            "kickoff_iso": m.get("kickoff_iso") or date_iso,
+        }
+        predictions[mid_int] = pred
+
+    return {
+        "matches": matches,
+        "predictions": predictions,
+        "ratings_id": ratings_id,
+        "elo_id": elo_id,
+        "corpus_id": corpus_id,
+        "date_iso": date_iso,
+        "ratings_cutoff_iso": ratings_cutoff_iso,
+    }
+
+
+def autoload_context_for_date(
+    date_iso: str,
+    corpus: list[dict],
+    elo_snapshots: Any,
+) -> dict:
+    """Populate session state with the context cards' data for ``date_iso``.
+
+    This is the Streamlit-aware wrapper around :func:`_autoload_pure`.
+    It is intended to be called from :func:`dashboard.app.main` *before*
+    the Tournament Snapshot and Highest Model Confidence renderers so
+    the cards populate on page open without requiring the user to
+    click "Show Predictions".
+
+    The helper is cheap to call on every rerun: it short-circuits via
+    the :data:`KEYS.CONTEXT_AUTOLOAD_DATE` sentinel when the same date
+    has already been loaded.  When the user changes the date in the
+    per-view picker the sentinel mismatch forces a fresh load.
+
+    Parameters
+    ----------
+    date_iso
+        ``"YYYY-MM-DD"`` ISO date string.  ``datetime.date`` objects
+        are accepted and normalised.
+    corpus, elo_snapshots
+        The same data structures held by :func:`dashboard.app.main`.
+
+    Returns
+    -------
+    dict
+        The assembled payload — same shape as
+        :func:`_autoload_pure` returns — so the caller can read it
+        without going back through session state.  Also written to
+        :data:`KEYS.LOADED_MATCHES`, ``KEYS.LOADED_MATCHES + ".date"``,
+        and :data:`KEYS.PREDICTIONS_BY_MATCH`.
+    """
+    # ---- Defensive normalisation ---- #
+    if hasattr(date_iso, "isoformat") and not isinstance(date_iso, str):
+        try:
+            date_iso = date_iso.isoformat()
+        except Exception:
+            pass
+    if not isinstance(date_iso, str) or not date_iso:
+        # Without a usable date string we can't cache-key anything;
+        # return an empty payload rather than raising — the cards
+        # then render their calm placeholders.
+        empty = {
+            "matches": [],
+            "predictions": {},
+            "ratings_id": 0,
+            "elo_id": 0,
+            "corpus_id": 0,
+            "date_iso": "",
+            "ratings_cutoff_iso": "",
+        }
+        st.session_state[KEYS.LOADED_MATCHES] = []
+        st.session_state[KEYS.LOADED_MATCHES + ".date"] = ""
+        st.session_state[KEYS.PREDICTIONS_BY_MATCH] = {}
+        st.session_state[KEYS.CONTEXT_AUTOLOAD_DATE] = ""
+        return empty
+
+    # ---- Cache short-circuit (the hot path on every rerun) ---- #
+    cached_date = st.session_state.get(KEYS.CONTEXT_AUTOLOAD_DATE)
+    cached_matches = st.session_state.get(KEYS.LOADED_MATCHES)
+    if (
+        cached_date == date_iso
+        and cached_matches is not None
+        and st.session_state.get(KEYS.LOADED_MATCHES + ".date") == date_iso
+    ):
+        # Same date, already loaded → return the cached payload
+        # without touching the loader, get_ratings, or predict_match.
+        return {
+            "matches": cached_matches or [],
+            "predictions": st.session_state.get(KEYS.PREDICTIONS_BY_MATCH) or {},
+            "ratings_id": 0,
+            "elo_id": id(elo_snapshots) if elo_snapshots is not None else 0,
+            "corpus_id": id(corpus) if corpus is not None else 0,
+            "date_iso": date_iso,
+            "ratings_cutoff_iso": date_iso + "T23:59:59Z",
+        }
+
+    # ---- Lazy imports so context_cards stays import-cheap for callers
+    # that only want the pure helpers / renderers. ---- #
+    from dashboard.app import (
+        _CORPUS_BY_ID,
+        _ELO_BY_ID,
+        _load_unplayed_for_date,
+        _predict_match_cached,
+        get_ratings,
+    )
+    from dashboard.team_resolution import resolve_match_for_prediction
+
+    payload = _autoload_pure(
+        date_iso,
+        corpus,
+        elo_snapshots,
+        load_unplayed_fn=_load_unplayed_for_date,
+        predict_match_fn=_predict_match_cached,
+        resolve_match_fn=resolve_match_for_prediction,
+        get_ratings_fn=get_ratings,
+    )
+
+    # ---- Register handles so _predict_match_cached can find them ---- #
+    if payload.get("corpus_id"):
+        _CORPUS_BY_ID[payload["corpus_id"]] = corpus
+    if payload.get("elo_id"):
+        _ELO_BY_ID[payload["elo_id"]] = elo_snapshots
+
+    # ---- Write the same keys the per-view renderers already use ---- #
+    st.session_state[KEYS.LOADED_MATCHES] = payload["matches"]
+    st.session_state[KEYS.LOADED_MATCHES + ".date"] = date_iso
+    st.session_state[KEYS.PREDICTIONS_BY_MATCH] = payload["predictions"]
+    st.session_state[KEYS.CONTEXT_AUTOLOAD_DATE] = date_iso
+    return payload

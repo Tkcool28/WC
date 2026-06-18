@@ -40,6 +40,12 @@ class SessionKeys:
     # Per-match odds (dict keyed by match_id -> {"home", "draw", "away"} strs).
     ODDS_BY_MATCH: str = "odds_by_match"
 
+    # ---- Context-card autoload (Phase 9) ----
+    # Sentinel date the autoload helper last populated context cards for.
+    # When this equals the target date the autoload short-circuits without
+    # touching the loader / model. Stored as an ISO "YYYY-MM-DD" string.
+    CONTEXT_AUTOLOAD_DATE: str = "context.autoloaded"
+
     # ---- Predictions-section keys (legacy compat) ----
     PRED_LEGACY_PICKED_DATE: str = "auto_picked_date"
     PRED_LEGACY_LOADED_DATE: str = "auto_loaded_date"
