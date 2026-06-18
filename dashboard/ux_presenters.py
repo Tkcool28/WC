@@ -57,7 +57,8 @@ def outcome_headline(most_likely: dict) -> str:
 def most_likely_result(result: dict) -> dict:
     """Return the outcome with the highest blend probability.
 
-    Prefers ``result['blend_probs']``, falls back to ``result['pi_probs']``.
+    Uses ``result['primary_probs']`` (the official blended prediction),
+    falling back to ``result['blend_probs']`` then ``result['pi_probs']``.
     Does NOT depend on entered odds.
 
     Returns:
@@ -763,6 +764,7 @@ def analysis_raw_diagnostics(result: dict) -> dict:
     return {
         "book_odds": result.get("book_odds", {}),
         "book_fair": result.get("book_fair", {}),
+        "primary_probs": result.get("primary_probs", {}),
         "pi_probs": result.get("pi_probs", {}),
         "blend_probs": result.get("blend_probs", result.get("pi_probs", {})),
         "pi_only_probs": result.get("pi_only_probs", {}),

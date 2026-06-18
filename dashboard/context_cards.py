@@ -271,12 +271,13 @@ def pick_smart_default_date(
 def _probs_for(prediction: dict) -> dict:
     """Return the canonical display probs dict for a prediction.
 
-    Prefers ``blend_probs`` (the canonical display probs from
-    ``predict_match``), then ``pi_probs`` as a fallback — same
-    priority as :func:`dashboard.prediction_card._extract_most_likely`.
+    Prefers ``primary_probs`` (the official blended prediction), then
+    ``blend_probs``, then ``pi_probs`` as fallback — same priority as
+    :func:`dashboard.prediction_card._extract_most_likely`.
     """
     return (
-        prediction.get("blend_probs")
+        prediction.get("primary_probs")
+        or prediction.get("blend_probs")
         or prediction.get("pi_probs")
         or {}
     )

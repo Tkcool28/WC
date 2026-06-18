@@ -198,7 +198,7 @@ def render_bet_card(
     cards on the same page don't collide.
 
     The prediction dict is required (it provides the model's most-likely
-    result and the pi_probs / blend_probs that ``evaluate_market`` will
+    result and the primary_probs that ``evaluate_market`` will
     consume). It is NEVER mutated by this function.
 
     Parameters
@@ -210,7 +210,7 @@ def render_bet_card(
     prediction
         Output of :func:`soccer_ev_model.ev_workflow.predict_match`.
         Must contain at least ``home_team`` / ``away_team`` /
-        ``blend_probs`` (or ``pi_probs``) / ``confidence``.
+        ``primary_probs`` (or ``blend_probs`` / ``pi_probs``) / ``confidence``.
     key_prefix
         Unique widget-key prefix. Conventionally the match id (cast to
         str). Used to namespace the three ``text_input`` controls and
@@ -234,7 +234,7 @@ def render_bet_card(
     mlr_key = _extract_most_likely(prediction)
     mlr_text = _outcome_headline_text(mlr_key, prediction)
     p_top = (
-        (prediction.get("blend_probs") or prediction.get("pi_probs") or {}).get(mlr_key)
+        (prediction.get("primary_probs") or prediction.get("blend_probs") or prediction.get("pi_probs") or {}).get(mlr_key)
     )
     st.markdown("**Most Likely Result**")
     headline_html = (

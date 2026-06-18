@@ -261,7 +261,8 @@ def _render_prediction_details(prediction: dict) -> None:
     mlr = _extract_most_likely(prediction)
     headline = _outcome_headline_text(mlr, prediction)
     probs = (
-        prediction.get("blend_probs")
+        prediction.get("primary_probs")
+        or prediction.get("blend_probs")
         or prediction.get("pi_probs")
         or {}
     )
@@ -308,7 +309,8 @@ def _render_model_breakdown(prediction: dict) -> None:
     pi_only = prediction.get("pi_only_probs") or {}
     elo_only = prediction.get("elo_only_probs") or {}
     blend = (
-        prediction.get("blend_probs")
+        prediction.get("primary_probs")
+        or prediction.get("blend_probs")
         or prediction.get("pi_probs")
         or {}
     )
@@ -409,7 +411,8 @@ def _render_poisson_section(prediction: dict) -> None:
         return
 
     blend = (
-        prediction.get("blend_probs")
+        prediction.get("primary_probs")
+        or prediction.get("blend_probs")
         or prediction.get("pi_probs")
         or {}
     )
@@ -636,7 +639,7 @@ def _render_raw_diagnostics(prediction: dict, match_meta: dict) -> None:
     # Surface any prediction key that doesn't already have a section.
     handled = {
         "home_team", "away_team", "home_team_id", "away_team_id",
-        "date", "pi_probs", "blend_probs", "pi_only_probs",
+        "date", "primary_probs", "pi_probs", "blend_probs", "pi_only_probs",
         "elo_only_probs", "blend_was_used", "confidence", "banner",
         "canonical_home_id", "canonical_away_id", "identity_warnings",
         "_match_meta",

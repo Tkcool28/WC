@@ -55,26 +55,33 @@ def _format_probability(p: float | None) -> str:
 def _extract_most_likely(prediction: dict) -> str:
     """Return ``"home"`` / ``"draw"`` / ``"away"`` for the highest-prob market.
 
-    Prefers ``blend_probs`` (the canonical display probs from
-    ``predict_match``), then ``pi_probs`` as a fallback.  Returns ``""``
+    Prefers ``primary_probs`` (the official blended prediction), then
+    ``blend_probs``, then ``pi_probs`` as fallback.  Returns ``""``
     if no probability dict is present.
     """
-    pi = prediction.get("blend_probs") or prediction.get("pi_probs") or {}
-    if not pi:
+    probs = (
+        prediction.get("primary_probs")
+        or prediction.get("blend_probs")
+        or prediction.get("pi_probs")
+        or {}
+    )
+    if not probs:
         return ""
-    # ``max(..., key=...)`` is deterministic but breaks ties arbitrarily;
-    # order is fine for our display purposes (the agreement / margin
-    # numbers are computed elsewhere).
-    return max(pi.items(), key=lambda kv: kv[1])[0]
+    return max(probs.items(), key=lambda kv: kv[1])[0]
 
 
 def _extract_top_prob(prediction: dict) -> float | None:
     """Return the top-market probability (``0..1``) or ``None``."""
-    pi = prediction.get("blend_probs") or prediction.get("pi_probs") or {}
-    if not pi:
+    probs = (
+        prediction.get("primary_probs")
+        or prediction.get("blend_probs")
+        or prediction.get("pi_probs")
+        or {}
+    )
+    if not probs:
         return None
     try:
-        return max(float(v) for v in pi.values())
+        return max(float(v) for v in probs.values())
     except (TypeError, ValueError):
         return None
 

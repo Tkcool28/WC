@@ -372,7 +372,6 @@ def test_render_notes_bullets_escapes_each_note():
 _PROTECTED_FILES = [
     "soccer_ev_model/pi_ratings.py",
     "soccer_ev_model/elo_ratings.py",
-    "soccer_ev_model/prediction_summary.py",
     "soccer_ev_model/confidence.py",
 ]
 

@@ -248,13 +248,14 @@ def predict_match(
 
     Returns:
         dict with at least these keys:
+          - primary_probs      (3-way dict, the official blended prediction)
+          - pi_probs           (3-way dict, alias of primary_probs for backward compat)
+          - blend_probs        (3-way dict, alias of primary_probs for backward compat)
+          - pi_only_probs      (3-way dict, pure pi-rating)
+          - elo_only_probs     (3-way dict or None)
           - home_team, away_team
           - home_team_id, away_team_id
           - date
-          - pi_probs           (3-way dict, the blend or pure pi)
-          - blend_probs        (3-way dict, alias of pi_probs)
-          - pi_only_probs      (3-way dict, pure pi)
-          - elo_only_probs     (3-way dict or None)
           - blend_was_used     (bool)
           - blend_w_pi         (float, the weight used)
           - blend_w_elo        (float, the weight used)
@@ -312,10 +313,11 @@ def predict_match(
         "home_team_id": home_team_id,
         "away_team_id": away_team_id,
         "date": date,
+        # primary_probs: the official blended prediction (pi+Elo blend when Elo
+        # is available, pure pi-rating otherwise).  All consumers MUST use
+        # this field.  pi_probs and backward-compat aliases.
+        "primary_probs": {k: round(v, 4) for k, v in pi.items()},
         "pi_probs": {k: round(v, 4) for k, v in pi.items()},
-        # Explicit alias: `pi_probs` is the Pi+Elo blend when Elo is supplied,
-        # else pure pi. `blend_probs` is the same dict under a clearer name.
-        # Both keys are kept for backward compatibility with existing readers.
         "blend_probs": {k: round(v, 4) for k, v in pi.items()},
         "pi_only_probs": {k: round(v, 4) for k, v in pi_only.items()},
         "elo_only_probs": {k: round(v, 4) for k, v in elo_only.items()} if elo_only is not None else None,
@@ -347,8 +349,10 @@ def evaluate_market(
 
     Args:
         prediction: dict produced by `predict_match`. Must contain at
-            minimum: `pi_probs` (3-way dict), `confidence` (with key
-            `calibrated_p`), `home_team`, `away_team`.
+            minimum: `primary_probs` (3-way dict), `confidence` (with key
+            `calibrated_p`), `home_team`, `away_team`.  `primary_probs` is
+            the official blended prediction field.  For backward compat,
+            `pi_probs` is accepted if `primary_probs` is missing.
         book_home_odds, book_draw_odds, book_away_odds: American odds.
             Must be valid (non-zero, in range). Inherits the same
             `ValueError` semantics as `no_vig.remove_vig`.
@@ -378,13 +382,17 @@ def evaluate_market(
         ValueError: if `prediction` is missing required keys.
     """
     # ---- validate prediction dict ----
-    required = ("pi_probs", "confidence")
+    required = ("primary_probs",)
     for k in required:
         if k not in prediction:
-            raise ValueError(
-                f"evaluate_market: prediction dict missing required key {k!r}"
-            )
-    pi_probs = prediction["pi_probs"]
+            # Backward compat: accept pi_probs if primary_probs is missing
+            if "pi_probs" in prediction:
+                prediction["primary_probs"] = prediction["pi_probs"]
+            else:
+                raise ValueError(
+                    f"evaluate_market: prediction dict missing required key 'primary_probs'"
+                )
+    primary_probs = prediction["primary_probs"]
     confidence = prediction.get("confidence") or {}
     if "calibrated_p" not in confidence:
         raise ValueError(
@@ -395,15 +403,15 @@ def evaluate_market(
     imp = implied_probs(book_home_odds, book_draw_odds, book_away_odds)
     book_fair = imp["fair"]
 
-    # ---- calibrated pi probs. NOTE: consumed ONLY by the +EV flag
+    # ---- calibrated primary probs. NOTE: consumed ONLY by the +EV flag
     # pipeline below. The dashboard prediction summary intentionally
-    # displays the raw blend (`pi_probs`/`blend_probs`), not these
-    # calibrated values — calibration is an EV-layer concern. ----
-    calibrated_pi = _calibrate_probs(pi_probs, confidence["calibrated_p"])
+    # displays the raw primary_probs, not these calibrated values —
+    # calibration is an EV-layer concern. ----
+    calibrated_pi = _calibrate_probs(primary_probs, confidence["calibrated_p"])
 
-    # ---- edges (raw pi minus book_fair). This is the +EV signal. ----
+    # ---- edges (raw primary minus book_fair). This is the +EV signal. ----
     edges = {
-        m: round(pi_probs[m] - book_fair[m], 4)
+        m: round(primary_probs[m] - book_fair[m], 4)
         for m in ("home", "draw", "away")
     }
 
@@ -431,7 +439,7 @@ def evaluate_market(
         # `prediction_summary.largest_market_delta`: model - market,
         # in percentage points).
         deltas_pct = {
-            m: round((pi_probs[m] - book_fair[m]) * 100, 1)
+            m: round((primary_probs[m] - book_fair[m]) * 100, 1)
             for m in ("home", "draw", "away")
         }
         market_divergence = market_divergence_label(deltas_pct)
@@ -443,7 +451,7 @@ def evaluate_market(
         largest_market_delta_val = largest_market_delta(
             deltas_pct,
             market_labels=market_labels,
-            model_probs=pi_probs,
+            model_probs=primary_probs,
             market_probs=book_fair,
         )
     except Exception:

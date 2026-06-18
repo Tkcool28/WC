@@ -319,10 +319,10 @@ def _render_warnings(assessment: dict) -> None:
 def _render_market_baseline(result: dict) -> None:
     """Render the market baseline section (model vs no-vig book comparison).
 
-    Reads ``result['blend_probs']`` (fallback ``pi_probs`` via
-    ``resolve_model_probs_for_market``) and ``result['book_fair']``, then
-    shows the per-market deltas, a divergence label, and the outcome with
-    the largest disagreement.  Pure presentation: no I/O, no model calls.
+    Reads ``result['primary_probs']`` (via ``resolve_model_probs_for_market``)
+    and ``result['book_fair']``, then shows the per-market deltas, a
+    divergence label, and the outcome with the largest disagreement.
+    Pure presentation: no I/O, no model calls.
     """
     model_probs = resolve_model_probs_for_market(result)
     market_probs = result["book_fair"]
@@ -1716,6 +1716,7 @@ def _render_predictions_view(
                         "home_team_id": int(home_id),
                         "away_team_id": int(away_id),
                         "date": picked_iso,
+                        "primary_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "pi_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "blend_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "pi_only_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
@@ -2094,6 +2095,7 @@ def _render_bets_view(
                         "home_team_id": int(home_id),
                         "away_team_id": int(away_id),
                         "date": picked_iso,
+                        "primary_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "pi_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "blend_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "pi_only_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
@@ -2395,7 +2397,7 @@ def _render_custom_bet_expander(
         mlr_key = _extract_most_likely(prediction)
         mlr_text = _outcome_headline_text(mlr_key, prediction)
         p_top = (
-            (prediction.get("blend_probs") or prediction.get("pi_probs") or {}).get(mlr_key)
+            (prediction.get("primary_probs") or prediction.get("blend_probs") or prediction.get("pi_probs") or {}).get(mlr_key)
         )
         st.markdown("**Most Likely Result**")
         headline_html = (
@@ -2589,6 +2591,7 @@ def _render_analysis_view(
                         "home_team_id": int(home_id),
                         "away_team_id": int(away_id),
                         "date": picked_iso,
+                        "primary_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "pi_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "blend_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "pi_only_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
