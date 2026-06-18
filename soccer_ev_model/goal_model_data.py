@@ -146,3 +146,223 @@ def write_audit_report(output: str | Path, path: str | Path = DEFAULT_MATCH_PATH
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     Path(output).write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     return report
+
+
+# ---------------------------------------------------------------------------
+# Tournament classification
+# ---------------------------------------------------------------------------
+
+# Ordered rules: first match wins.  Keys are lowercased for matching.
+# Qualification patterns MUST precede non-qualification patterns for the same tournament.
+_TOURNAMENT_CLASS_RULES: list[tuple[str, str]] = [
+    # WC qualifiers (before non-qualifier WC)
+    ("fifa world cup qualification", "world_cup_qualifier"),
+    ("fifa world cup", "world_cup"),
+    # Continental championship qualifiers (before non-qualifier)
+    ("uefa euro qualification", "continental_qualifier"),
+    ("copa américa qualification", "continental_qualifier"),
+    ("copa america qualification", "continental_qualifier"),
+    ("afc asian cup qualification", "continental_qualifier"),
+    ("african cup of nations qualification", "continental_qualifier"),
+    ("concacaf nations league qualification", "continental_qualifier"),
+    ("world cup qualification", "world_cup_qualifier"),
+    ("euro qualification", "continental_qualifier"),
+    ("nations league qualification", "continental_qualifier"),
+    ("gold cup qualification", "continental_qualifier"),
+    ("caribbean cup qualification", "continental_qualifier"),
+    ("oceania nations cup qualification", "continental_qualifier"),
+    ("aff championship qualification", "continental_qualifier"),
+    ("asean championship qualification", "continental_qualifier"),
+    ("arab cup qualification", "continental_qualifier"),
+    ("cosafa cup qualification", "continental_qualifier"),
+    ("afc challenge cup qualification", "continental_qualifier"),
+    ("eaff championship qualification", "continental_qualifier"),
+    ("conifa world cup qualification", "other"),
+    ("conifa world football cup qualification", "other"),
+    # Continental championships (non-qualifier)
+    ("uefa euro", "continental_championship"),
+    ("copa américa", "continental_championship"),
+    ("copa america", "continental_championship"),
+    ("african cup of nations", "continental_championship"),
+    ("afc asian cup", "continental_championship"),
+    ("gold cup", "continental_championship"),
+    ("concacaf nations league", "nations_league"),
+    ("ofc nations cup", "continental_championship"),
+    ("oceania nations cup", "continental_championship"),
+    # Nations League (non-qualifier)
+    ("nations league", "nations_league"),
+    # Friendlies
+    ("friendly", "friendly"),
+    # Regional / minor tournaments
+    ("island games", "regional_minor"),
+    ("pacific games", "regional_minor"),
+    ("pacific mini games", "regional_minor"),
+    ("south pacific games", "regional_minor"),
+    ("southeast asian games", "regional_minor"),
+    ("south asian games", "regional_minor"),
+    ("asian games", "regional_minor"),
+    ("aff championship", "regional_minor"),
+    ("asean championship", "regional_minor"),
+    ("ceca", "regional_minor"),
+    ("cosafa", "regional_minor"),
+    ("gulf cup", "regional_minor"),
+    ("cafu", "regional_minor"),
+    ("uncaf", "regional_minor"),
+    ("nafu", "regional_minor"),
+    ("baltic cup", "regional_minor"),
+    ("nordic championship", "regional_minor"),
+    ("caribbean cup", "regional_minor"),
+    ("cfu caribbean", "regional_minor"),
+    ("concacaf series", "regional_minor"),
+    ("confederations cup", "regional_minor"),
+    ("conifa", "regional_minor"),
+    ("elf cup", "regional_minor"),
+    ("viva world cup", "regional_minor"),
+    ("fifi wild cup", "regional_minor"),
+    ("inter games", "regional_minor"),
+    ("dragon cup", "regional_minor"),
+    ("marianas cup", "regional_minor"),
+    ("windward islands", "regional_minor"),
+    ("muratti vase", "regional_minor"),
+    ("tournoi de france", "regional_minor"),
+    ("king's cup", "regional_minor"),
+    ("kirin", "regional_minor"),
+    ("merdeka", "regional_minor"),
+    ("nehr", "regional_minor"),
+    ("saff", "regional_minor"),
+    ("eaff", "regional_minor"),
+    ("waff", "regional_minor"),
+    ("cafa", "regional_minor"),
+    ("abcs tournament", "regional_minor"),
+    ("atlantic heritage cup", "regional_minor"),
+    ("canadian shield", "regional_minor"),
+    ("mahindra", "regional_minor"),
+    ("mapinduzi", "regional_minor"),
+    ("msg prime minister", "regional_minor"),
+    ("niamh challenge", "regional_minor"),
+    ("outrigger challenge", "regional_minor"),
+    ("palestine international", "regional_minor"),
+    ("philippine peace", "regional_minor"),
+    ("prime minister", "regional_minor"),
+    ("skn football", "regional_minor"),
+    ("superclásico de las américas", "regional_minor"),
+    ("trans-tasman", "regional_minor"),
+    ("tri nation", "regional_minor"),
+    ("three nations", "regional_minor"),
+    ("tynwald hill", "regional_minor"),
+    ("udeac", "regional_minor"),
+    ("uniffac", "regional_minor"),
+    ("unity cup", "regional_minor"),
+    ("vff cup", "regional_minor"),
+    ("world unity", "regional_minor"),
+    ("lunar new year", "regional_minor"),
+    ("dynasty cup", "regional_minor"),
+    ("korea cup", "regional_minor"),
+    ("navruz", "regional_minor"),
+    ("osn cup", "regional_minor"),
+    ("jordan international", "regional_minor"),
+    ("cyprus international", "regional_minor"),
+    ("malta international", "regional_minor"),
+    ("dunhill", "regional_minor"),
+    ("marlboro", "regional_minor"),
+    ("miami cup", "regional_minor"),
+    ("joe robbie", "regional_minor"),
+    ("diamond jubilee", "regional_minor"),
+    ("four nations", "regional_minor"),
+    ("millennium", "regional_minor"),
+    ("copa lipton", "regional_minor"),
+    ("copa paz", "regional_minor"),
+    ("copa del pacífico", "regional_minor"),
+    ("copa del pacifico", "regional_minor"),
+    ("copa confraternidad", "regional_minor"),
+    ("soccer ashes", "regional_minor"),
+    ("intercontinental cup", "regional_minor"),
+    ("afro-asian", "regional_minor"),
+    ("conmebol–uefa", "regional_minor"),
+    ("conmebol-uefa", "regional_minor"),
+    ("fifa series", "regional_minor"),
+    ("al ain", "regional_minor"),
+    ("amilcar cabral", "regional_minor"),
+    ("benedikt fontana", "regional_minor"),
+    ("corsica cup", "regional_minor"),
+    ("coupe de l'outre-mer", "regional_minor"),
+    ("cup of ancient", "regional_minor"),
+    ("dakar tournament", "regional_minor"),
+    ("hungary heritage", "regional_minor"),
+    ("indian ocean", "regional_minor"),
+    ("international tournament of peoples", "regional_minor"),
+    ("king hassan", "regional_minor"),
+    ("mauritius four nations", "regional_minor"),
+    ("melanesia cup", "regional_minor"),
+    ("merlion cup", "regional_minor"),
+    ("morocco, capital of african", "regional_minor"),
+    ("mukuru", "regional_minor"),
+    ("nile basin", "regional_minor"),
+    ("scania 100", "regional_minor"),
+    ("simba tournament", "regional_minor"),
+    ("south asian super", "regional_minor"),
+    ("the other final", "regional_minor"),
+    ("tifoco", "regional_minor"),
+    ("usa cup", "regional_minor"),
+    ("united arab emirates friendship", "regional_minor"),
+    ("afc challenge cup", "regional_minor"),
+    ("afc solidarity cup", "regional_minor"),
+    ("arab cup", "regional_minor"),
+    ("nations cup", "regional_minor"),
+    ("tri-nations cup", "regional_minor"),
+]
+
+TOURNAMENT_CLASSES = [
+    "world_cup",
+    "continental_championship",
+    "world_cup_qualifier",
+    "continental_qualifier",
+    "nations_league",
+    "friendly",
+    "regional_minor",
+    "other",
+]
+
+# Default match-importance weights (scheme 1: mild)
+MATCH_IMPORTANCE_WEIGHTS: dict[str, float] = {
+    "world_cup": 1.20,
+    "continental_championship": 1.15,
+    "world_cup_qualifier": 1.10,
+    "continental_qualifier": 1.05,
+    "nations_league": 1.00,
+    "friendly": 0.75,
+    "regional_minor": 0.90,
+    "other": 0.90,
+}
+
+# Stronger friendly discount (scheme 2)
+MATCH_IMPORTANCE_WEIGHTS_STRONG: dict[str, float] = {
+    "world_cup": 1.25,
+    "continental_championship": 1.20,
+    "world_cup_qualifier": 1.10,
+    "continental_qualifier": 1.05,
+    "nations_league": 1.00,
+    "friendly": 0.50,
+    "regional_minor": 0.80,
+    "other": 0.80,
+}
+
+
+def classify_tournament(raw_label: str) -> str:
+    """Deterministic tournament classification.
+
+    Returns one of the 8 canonical classes.  Unknown labels map to 'other'.
+    """
+    lowered = raw_label.strip().lower()
+    for pattern, cls in _TOURNAMENT_CLASS_RULES:
+        if pattern in lowered:
+            return cls
+    return "other"
+
+
+def tournament_class_counts(matches: Iterable[GoalMatch]) -> dict[str, int]:
+    """Return match count per tournament class."""
+    counts: Counter = Counter()
+    for m in matches:
+        counts[classify_tournament(m.tournament)] += 1
+    return dict(counts)
