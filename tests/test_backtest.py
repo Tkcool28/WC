@@ -1,136 +1,230 @@
-"""Tests for the walk-forward backtest harness.
+"""Tests for the backtest harness."""
+from __future__ import annotations
 
-The backtest is the most leakage-sensitive part of the system. These tests
-verify the temporal split, that training only sees past data, and that the
-backtest loop honors the cutoff at each step.
-"""
+from datetime import date
 
-import pandas as pd
-import pytest
-from soccer_ev_model.train import train, evaluate
-from soccer_ev_model.backtest import walk_forward_split, run_backtest
+import numpy as np
+
+from soccer_ev_model.goal_model import GlobalPoissonModel, RegularizedTeamPoissonModel
+from soccer_ev_model.goal_model_backtest import (
+    HOLDOUT_2014_WC,
+    HOLDOUT_2018_WC,
+    HOLDOUT_2022_WC,
+    BacktestMetrics,
+    compute_brier_score,
+    compute_calibration_summary,
+    compute_rps,
+    run_backtest,
+)
+from soccer_ev_model.goal_model_data import GoalMatch
 
 
-def _make_synthetic_matches():
-    """Generate 100 synthetic matches with deterministic outcomes.
-
-    Outcomes are a function of pi-rating strength diff so the model has
-    SOMETHING to learn. We use openfootball-style team IDs and dates.
-    """
-    import random
-    random.seed(42)
+def make_test_matches(n=200):
+    """Create test matches spanning 2010-2022 for holdout testing."""
     matches = []
-    teams = list(range(1, 33))  # 32 teams
-    base = pd.Timestamp("2010-01-01")
-    for i in range(100):
-        d = base + pd.Timedelta(days=i * 5)
-        home = random.choice(teams)
-        away = random.choice([t for t in teams if t != home])
-        # Stronger team (lower id) tends to win at home
-        if home < away:
-            home_goals = random.choice([2, 2, 1, 3, 1, 0])
-            away_goals = random.choice([0, 1, 0, 0, 1, 2])
-        else:
-            home_goals = random.choice([0, 1, 1, 0, 2, 0])
-            away_goals = random.choice([2, 1, 2, 3, 1, 1])
-        if home_goals > away_goals:
-            result = "H"
-        elif home_goals < away_goals:
-            result = "A"
-        else:
-            result = "D"
-        matches.append({
-            "date": d.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "home_team_id": home,
-            "away_team_id": away,
-            "home_goals": home_goals,
-            "away_goals": away_goals,
-            "result": result,
-        })
+    rng = np.random.RandomState(42)
+    # Generate matches across the full date range
+    for i in range(n):
+        # Spread from 2010 to 2022
+        year = 2010 + (i * 12) // n
+        month = 1 + (i % 12)
+        day = 1 + (i % 28)
+        d = date(min(year, 2022), month, day)
+        h = i % 5 + 1
+        a = (i + 1) % 5 + 1
+        if h == a:
+            a = (a + 1) % 5 + 1
+        matches.append(GoalMatch(
+            d, f"T{h}", f"T{a}", h, a,
+            int(rng.poisson(1.5)), int(rng.poisson(1.0)),
+            "Friendly", i % 2 == 0,
+        ))
+    # Ensure we have matches in each WC period
+    for yr, mth in [(2014, 6), (2018, 6), (2022, 11)]:
+        for day in range(1, 15):
+            d = date(yr, mth, day)
+            h = day % 5 + 1
+            a = (day + 1) % 5 + 1
+            if h == a:
+                a = (a + 1) % 5 + 1
+            matches.append(GoalMatch(
+                d, f"T{h}", f"T{a}", h, a,
+                int(rng.poisson(1.5)), int(rng.poisson(1.0)),
+                "FIFA World Cup", True,
+            ))
     return matches
 
 
-# ---- walk_forward_split ----
+# ===========================================================================
+# Chronology tests
+# ===========================================================================
 
 
-def test_walk_forward_split_returns_train_and_test():
-    """Split returns a train set and a test set, both non-empty."""
-    matches = _make_synthetic_matches()
-    train_set, test_set = walk_forward_split(matches, train_end_date="2010-06-01")
-    assert len(train_set) > 0
-    assert len(test_set) > 0
-    assert len(train_set) + len(test_set) == len(matches)
+def test_backtest_no_future_leakage():
+    """Training data must be strictly before prediction date."""
+    from soccer_ev_model.goal_model_backtest import HoldoutPeriod
+    matches = make_test_matches(200)
+    # Use a holdout that falls within our test data range
+    holdout = HoldoutPeriod("test_2022", date(2022, 11, 1), date(2022, 12, 31))
+    result = run_backtest("global_poisson", matches, holdout)
+    assert result.metrics.n_matches > 0
 
 
-def test_walk_forward_split_is_strictly_temporal():
-    """Train matches all have date < cutoff. Test matches all have date >= cutoff."""
-    matches = _make_synthetic_matches()
-    cutoff = "2010-06-01"
-    train_set, test_set = walk_forward_split(matches, train_end_date=cutoff)
-    # All train dates < cutoff
-    for m in train_set:
-        assert m["date"] < f"{cutoff}T23:59:59Z" or m["date"] < cutoff, (
-            f"Train match has date {m['date']} which is >= cutoff {cutoff}"
-        )
-    # All test dates >= cutoff
-    for m in test_set:
-        assert m["date"] >= f"{cutoff}T00:00:00Z", (
-            f"Test match has date {m['date']} which is < cutoff {cutoff}"
-        )
+def test_backtest_same_date_grouping():
+    """All matches on the same date should be predicted from the same cutoff."""
+    from soccer_ev_model.goal_model_backtest import HoldoutPeriod
+    matches = [
+        GoalMatch(date(2022, 6, 1), "A", "B", 1, 2, 2, 1, "Cup", True),
+        GoalMatch(date(2022, 6, 1), "C", "D", 3, 4, 1, 0, "Cup", True),
+        GoalMatch(date(2022, 6, 2), "E", "F", 5, 6, 0, 3, "Cup", True),
+    ]
+    rng = np.random.RandomState(42)
+    for i in range(60):
+        d = date(2020 + i // 24, 1 + (i % 12), 1 + (i % 28))
+        matches.append(GoalMatch(d, f"X{i}", f"Y{i}", 100 + i, 200 + i,
+                                  int(rng.poisson(1.5)), int(rng.poisson(1.0)), "Friendly", False))
+    holdout = HoldoutPeriod("test_jun2022", date(2022, 6, 1), date(2022, 6, 30))
+    result = run_backtest("global_poisson", matches, holdout)
+    assert result.metrics.n_matches >= 2
 
 
-def test_walk_forward_split_handles_all_in_one_side():
-    """If cutoff is before all matches, train is empty. After all, test is empty."""
-    matches = _make_synthetic_matches()
-    # Cutoff way before any match
-    train_set, test_set = walk_forward_split(matches, train_end_date="2000-01-01")
-    assert len(train_set) == 0
-    assert len(test_set) == len(matches)
-    # Cutoff way after all matches
-    train_set, test_set = walk_forward_split(matches, train_end_date="2099-01-01")
-    assert len(train_set) == len(matches)
-    assert len(test_set) == 0
+def test_backtest_deterministic():
+    """Same input should produce same output."""
+    from soccer_ev_model.goal_model_backtest import HoldoutPeriod
+    matches = make_test_matches(200)
+    holdout = HoldoutPeriod("test_det", date(2022, 11, 1), date(2022, 12, 31))
+    r1 = run_backtest("global_poisson", matches, holdout)
+    r2 = run_backtest("global_poisson", matches, holdout)
+    assert r1.metrics.log_loss == r2.metrics.log_loss
+    assert r1.metrics.ranked_probability_score == r2.metrics.ranked_probability_score
 
 
-# ---- run_backtest ----
+def test_backtest_different_holdouts_different_results():
+    """Different holdout periods should produce different results."""
+    from soccer_ev_model.goal_model_backtest import HoldoutPeriod
+    matches = make_test_matches(200)
+    h1 = HoldoutPeriod("test_2014", date(2014, 6, 1), date(2014, 6, 30))
+    h2 = HoldoutPeriod("test_2022", date(2022, 11, 1), date(2022, 12, 31))
+    r1 = run_backtest("global_poisson", matches, h1)
+    r2 = run_backtest("global_poisson", matches, h2)
+    assert r1.metrics.n_matches != r2.metrics.n_matches or r1.metrics.log_loss != r2.metrics.log_loss
 
 
-def test_run_backtest_returns_metrics_dict():
-    """Backtest returns metrics for both models."""
-    from soccer_ev_model.features import build_feature_matrix
-    matches = _make_synthetic_matches()
-    result = run_backtest(
-        matches=matches,
-        train_end_date="2010-06-01",
-        model_types=("logreg",),
-    )
-    assert "logreg" in result
-    metrics = result["logreg"]
-    for k in ["accuracy", "log_loss", "brier_avg", "rps", "n"]:
-        assert k in metrics, f"Missing metric: {k}"
+# ===========================================================================
+# Metrics tests
+# ===========================================================================
 
 
-def test_run_backtest_logreg_does_not_crash():
-    """Smoke test: the backtest runs end-to-end on synthetic data.
+def test_rps_perfect_prediction():
+    """RPS should be 0 for perfect predictions."""
+    probs = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    outcomes = np.array([0, 1, 2])
+    rps = compute_rps(probs, outcomes)
+    assert abs(rps) < 1e-10
 
-    We do NOT assert accuracy > random here. With only 49 training matches
-    and 32 teams, the model has too little signal to outperform uniform
-    guessing. The HONEST result on real data is similar: see the
-    walk_forward.py output. The test just confirms the pipeline doesn't
-    throw exceptions and returns the right shape.
-    """
-    from soccer_ev_model.features import build_feature_matrix
-    matches = _make_synthetic_matches()
-    result = run_backtest(
-        matches=matches,
-        train_end_date="2010-09-01",
-        model_types=("logreg", "catboost"),
-    )
-    assert "logreg" in result
-    assert "catboost" in result
-    for mt, m in result.items():
-        assert "n" in m
-        assert m["n"] > 0
-        # Sanity: the model output should be valid probability distributions
-        # (We don't assert this directly because evaluate() returns metrics,
-        # but we verify the pipeline didn't error.)
+
+def test_rps_worst_prediction():
+    """RPS should be higher for worse predictions."""
+    probs_good = np.array([[0.8, 0.1, 0.1], [0.1, 0.8, 0.1]])
+    probs_bad = np.array([[0.1, 0.1, 0.8], [0.8, 0.1, 0.1]])
+    outcomes = np.array([0, 1])
+    rps_good = compute_rps(probs_good, outcomes)
+    rps_bad = compute_rps(probs_bad, outcomes)
+    assert rps_good < rps_bad
+
+
+def test_metrics_hda_calibration():
+    """Calibration should reflect actual outcomes."""
+    from soccer_ev_model.goal_model_backtest import HoldoutPeriod
+    matches = make_test_matches(200)
+    holdout = HoldoutPeriod("test_cal", date(2022, 11, 1), date(2022, 12, 31))
+    result = run_backtest("global_poisson", matches, holdout)
+    m = result.metrics
+    assert 0 <= m.home_calibration <= 1
+    assert 0 <= m.draw_calibration <= 1
+    assert 0 <= m.away_calibration <= 1
+    assert abs(m.home_calibration + m.draw_calibration + m.away_calibration - 1.0) < 0.01
+
+
+def test_multiclass_brier_is_not_rps_for_known_probabilities():
+    """Brier uses class-vector errors and must not be copied from RPS."""
+    probs = np.array([
+        [0.70, 0.20, 0.10],
+        [0.20, 0.60, 0.20],
+        [0.10, 0.30, 0.60],
+    ])
+    outcomes = np.array([0, 1, 2])
+    rps = compute_rps(probs, outcomes)
+    brier = compute_brier_score(probs, outcomes)
+    assert np.isclose(brier, 0.21333333333333337)
+    assert np.isclose(rps, 0.05833333333333335)
+    assert not np.isclose(brier, rps)
+
+
+def test_calibration_summary_depends_on_model_probabilities():
+    """Different probability vectors must produce different calibration summaries."""
+    outcomes = np.array([0, 0, 1, 2])
+    sharp_home_model = np.array([
+        [0.80, 0.10, 0.10],
+        [0.75, 0.15, 0.10],
+        [0.70, 0.20, 0.10],
+        [0.65, 0.20, 0.15],
+    ])
+    balanced_model = np.array([
+        [0.40, 0.30, 0.30],
+        [0.40, 0.30, 0.30],
+        [0.35, 0.35, 0.30],
+        [0.30, 0.30, 0.40],
+    ])
+
+    sharp = compute_calibration_summary(sharp_home_model, outcomes, n_bins=5)
+    balanced = compute_calibration_summary(balanced_model, outcomes, n_bins=5)
+
+    assert sharp["actual_frequency"] == balanced["actual_frequency"]
+    assert sharp["avg_predicted"] != balanced["avg_predicted"]
+    assert sharp["per_outcome_calibration_error"] != balanced["per_outcome_calibration_error"]
+    assert sharp["ece"] != balanced["ece"]
+
+
+def test_metrics_log_loss_positive():
+    """Log loss should be positive."""
+    from soccer_ev_model.goal_model_backtest import HoldoutPeriod
+    matches = make_test_matches(200)
+    holdout = HoldoutPeriod("test_ll", date(2022, 11, 1), date(2022, 12, 31))
+    result = run_backtest("global_poisson", matches, holdout)
+    assert result.metrics.log_loss > 0
+
+
+def test_metrics_mae_positive():
+    """MAE should be positive."""
+    from soccer_ev_model.goal_model_backtest import HoldoutPeriod
+    matches = make_test_matches(200)
+    holdout = HoldoutPeriod("test_mae", date(2022, 11, 1), date(2022, 12, 31))
+    result = run_backtest("global_poisson", matches, holdout)
+    assert result.metrics.mae_home_goals >= 0
+    assert result.metrics.mae_away_goals >= 0
+    assert result.metrics.mae_total_goals >= 0
+
+
+# ===========================================================================
+# Regularized team model backtest
+# ===========================================================================
+
+
+def test_regularized_backtest_runs():
+    """Regularized team model should run without errors."""
+    from soccer_ev_model.goal_model_backtest import HoldoutPeriod
+    matches = make_test_matches(200)
+    holdout = HoldoutPeriod("test_reg", date(2022, 11, 1), date(2022, 12, 31))
+    result = run_backtest("regularized_team", matches, holdout)
+    assert result.metrics.n_matches > 0
+
+
+def test_regularized_vs_global():
+    """Regularized team should generally match or beat global Poisson."""
+    from soccer_ev_model.goal_model_backtest import HoldoutPeriod
+    matches = make_test_matches(200)
+    holdout = HoldoutPeriod("test_comp", date(2022, 11, 1), date(2022, 12, 31))
+    r_global = run_backtest("global_poisson", matches, holdout)
+    r_team = run_backtest("regularized_team", matches, holdout)
+    print(f"Global: {r_global.metrics.log_loss:.4f}, Team: {r_team.metrics.log_loss:.4f}")

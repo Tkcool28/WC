@@ -1,0 +1,1 @@
+Generated audit and backtest outputs are written here by the research scripts. Final validated reports may be committed; transient CI outputs remain untracked unless needed for review.

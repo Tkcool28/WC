@@ -1,0 +1,566 @@
+{
+  "aggregate_common_sample": {
+    "models": {
+      "current_production_blend": {
+        "actual_away_rate": 0.299869,
+        "actual_draw_rate": 0.230223,
+        "actual_home_rate": 0.469908,
+        "avg_pred_away": 0.34864,
+        "avg_pred_draw": 0.18889,
+        "avg_pred_home": 0.46247,
+        "brier": 0.573289,
+        "log_loss": 0.969857,
+        "n_matches": 3805,
+        "rps": 0.197281,
+        "top1": 0.554534
+      },
+      "elo": {
+        "actual_away_rate": 0.299869,
+        "actual_draw_rate": 0.230223,
+        "actual_home_rate": 0.469908,
+        "avg_pred_away": 0.337143,
+        "avg_pred_draw": 0.22267,
+        "avg_pred_home": 0.440186,
+        "brier": 0.543168,
+        "log_loss": 0.9271,
+        "n_matches": 3805,
+        "rps": 0.184872,
+        "top1": 0.588173
+      },
+      "goal": {
+        "actual_away_rate": 0.299869,
+        "actual_draw_rate": 0.230223,
+        "actual_home_rate": 0.469908,
+        "avg_pred_away": 0.322577,
+        "avg_pred_draw": 0.235367,
+        "avg_pred_home": 0.442056,
+        "brier": 0.551193,
+        "log_loss": 0.934044,
+        "n_matches": 3805,
+        "rps": 0.188964,
+        "top1": 0.566886
+      },
+      "pi": {
+        "actual_away_rate": 0.299869,
+        "actual_draw_rate": 0.230223,
+        "actual_home_rate": 0.469908,
+        "avg_pred_away": 0.34864,
+        "avg_pred_draw": 0.18889,
+        "avg_pred_home": 0.46247,
+        "brier": 0.573289,
+        "log_loss": 0.969857,
+        "n_matches": 3805,
+        "rps": 0.197281,
+        "top1": 0.554534
+      },
+      "elo60_goal40": {
+        "n_matches": 3805,
+        "log_loss": 0.91845,
+        "rps": 0.182779,
+        "brier": 0.53844,
+        "top1": 0.59343,
+        "avg_pred_home": 0.441,
+        "avg_pred_draw": 0.228,
+        "avg_pred_away": 0.331,
+        "actual_home_rate": 0.47,
+        "actual_draw_rate": 0.23,
+        "actual_away_rate": 0.3
+      },
+      "pi30_elo40_goal30": {
+        "n_matches": 3805,
+        "log_loss": 0.91845,
+        "rps": 0.182752,
+        "brier": 0.539085,
+        "top1": 0.586859,
+        "avg_pred_home": 0.447,
+        "avg_pred_draw": 0.216,
+        "avg_pred_away": 0.336,
+        "actual_home_rate": 0.47,
+        "actual_draw_rate": 0.23,
+        "actual_away_rate": 0.3
+      }
+    },
+    "n_common": 3805
+  },
+  "audit_version": "trusted_correction_v2_phase3",
+  "chronological_holdouts": {
+    "2014_WC": {
+      "models": {
+        "current_production_blend": {
+          "actual_away_rate": 0.34375,
+          "actual_draw_rate": 0.203125,
+          "actual_home_rate": 0.453125,
+          "avg_pred_away": 0.316292,
+          "avg_pred_draw": 0.195786,
+          "avg_pred_home": 0.487923,
+          "brier": 0.713117,
+          "log_loss": 1.173989,
+          "n_matches": 64,
+          "rps": 0.27141,
+          "top1": 0.4375
+        },
+        "elo": {
+          "actual_away_rate": 0.34375,
+          "actual_draw_rate": 0.203125,
+          "actual_home_rate": 0.453125,
+          "avg_pred_away": 0.314822,
+          "avg_pred_draw": 0.238501,
+          "avg_pred_home": 0.446677,
+          "brier": 0.552925,
+          "log_loss": 0.939139,
+          "n_matches": 64,
+          "rps": 0.195308,
+          "top1": 0.609375
+        },
+        "goal": {
+          "actual_away_rate": 0.34375,
+          "actual_draw_rate": 0.203125,
+          "actual_home_rate": 0.453125,
+          "avg_pred_away": 0.326492,
+          "avg_pred_draw": 0.277625,
+          "avg_pred_home": 0.395883,
+          "brier": 0.656503,
+          "log_loss": 1.082702,
+          "n_matches": 64,
+          "rps": 0.243621,
+          "top1": 0.421875
+        },
+        "pi": {
+          "actual_away_rate": 0.34375,
+          "actual_draw_rate": 0.203125,
+          "actual_home_rate": 0.453125,
+          "avg_pred_away": 0.316292,
+          "avg_pred_draw": 0.195786,
+          "avg_pred_home": 0.487923,
+          "brier": 0.713117,
+          "log_loss": 1.173989,
+          "n_matches": 64,
+          "rps": 0.27141,
+          "top1": 0.4375
+        },
+        "elo60_goal40": {
+          "n_matches": 64,
+          "log_loss": 0.983385,
+          "rps": 0.211148,
+          "brier": 0.586471,
+          "top1": 0.5781,
+          "avg_pred_home": 0.427144,
+          "avg_pred_draw": 0.252438,
+          "avg_pred_away": 0.320418,
+          "actual_home_rate": 0.453125,
+          "actual_draw_rate": 0.203125,
+          "actual_away_rate": 0.34375
+        }
+      },
+      "n_common": 64,
+      "n_total": 64
+    },
+    "2018_WC": {
+      "models": {
+        "current_production_blend": {
+          "actual_away_rate": 0.40625,
+          "actual_draw_rate": 0.203125,
+          "actual_home_rate": 0.390625,
+          "avg_pred_away": 0.348982,
+          "avg_pred_draw": 0.202917,
+          "avg_pred_home": 0.448101,
+          "brier": 0.667859,
+          "log_loss": 1.105361,
+          "n_matches": 64,
+          "rps": 0.252001,
+          "top1": 0.46875
+        },
+        "elo": {
+          "actual_away_rate": 0.40625,
+          "actual_draw_rate": 0.203125,
+          "actual_home_rate": 0.390625,
+          "avg_pred_away": 0.330593,
+          "avg_pred_draw": 0.239736,
+          "avg_pred_home": 0.42967,
+          "brier": 0.593512,
+          "log_loss": 0.995102,
+          "n_matches": 64,
+          "rps": 0.214268,
+          "top1": 0.546875
+        },
+        "goal": {
+          "actual_away_rate": 0.40625,
+          "actual_draw_rate": 0.203125,
+          "actual_home_rate": 0.390625,
+          "avg_pred_away": 0.348659,
+          "avg_pred_draw": 0.282193,
+          "avg_pred_home": 0.369149,
+          "brier": 0.63196,
+          "log_loss": 1.04871,
+          "n_matches": 64,
+          "rps": 0.232908,
+          "top1": 0.46875
+        },
+        "pi": {
+          "actual_away_rate": 0.40625,
+          "actual_draw_rate": 0.203125,
+          "actual_home_rate": 0.390625,
+          "avg_pred_away": 0.348982,
+          "avg_pred_draw": 0.202917,
+          "avg_pred_home": 0.448101,
+          "brier": 0.667859,
+          "log_loss": 1.105361,
+          "n_matches": 64,
+          "rps": 0.252001,
+          "top1": 0.46875
+        },
+        "elo60_goal40": {
+          "n_matches": 64,
+          "log_loss": 1.004807,
+          "rps": 0.218432,
+          "brier": 0.601638,
+          "top1": 0.5469,
+          "avg_pred_home": 0.405797,
+          "avg_pred_draw": 0.255619,
+          "avg_pred_away": 0.338584,
+          "actual_home_rate": 0.390625,
+          "actual_draw_rate": 0.203125,
+          "actual_away_rate": 0.40625
+        }
+      },
+      "n_common": 64,
+      "n_total": 64
+    },
+    "2022_WC": {
+      "models": {
+        "current_production_blend": {
+          "actual_away_rate": 0.328125,
+          "actual_draw_rate": 0.234375,
+          "actual_home_rate": 0.4375,
+          "avg_pred_away": 0.333578,
+          "avg_pred_draw": 0.20608,
+          "avg_pred_home": 0.460342,
+          "brier": 0.586879,
+          "log_loss": 0.984998,
+          "n_matches": 64,
+          "rps": 0.205586,
+          "top1": 0.484375
+        },
+        "elo": {
+          "actual_away_rate": 0.328125,
+          "actual_draw_rate": 0.234375,
+          "actual_home_rate": 0.4375,
+          "avg_pred_away": 0.331538,
+          "avg_pred_draw": 0.233558,
+          "avg_pred_home": 0.434904,
+          "brier": 0.611225,
+          "log_loss": 1.023647,
+          "n_matches": 64,
+          "rps": 0.218547,
+          "top1": 0.484375
+        },
+        "goal": {
+          "actual_away_rate": 0.328125,
+          "actual_draw_rate": 0.234375,
+          "actual_home_rate": 0.4375,
+          "avg_pred_away": 0.338179,
+          "avg_pred_draw": 0.288952,
+          "avg_pred_home": 0.372869,
+          "brier": 0.613491,
+          "log_loss": 1.024514,
+          "n_matches": 64,
+          "rps": 0.2159,
+          "top1": 0.515625
+        },
+        "pi": {
+          "actual_away_rate": 0.328125,
+          "actual_draw_rate": 0.234375,
+          "actual_home_rate": 0.4375,
+          "avg_pred_away": 0.333578,
+          "avg_pred_draw": 0.20608,
+          "avg_pred_home": 0.460342,
+          "brier": 0.586879,
+          "log_loss": 0.984998,
+          "n_matches": 64,
+          "rps": 0.205586,
+          "top1": 0.484375
+        },
+        "elo60_goal40": {
+          "n_matches": 64,
+          "log_loss": 1.01454,
+          "rps": 0.214373,
+          "brier": 0.604998,
+          "top1": 0.5,
+          "avg_pred_home": 0.409769,
+          "avg_pred_draw": 0.255562,
+          "avg_pred_away": 0.334669,
+          "actual_home_rate": 0.4375,
+          "actual_draw_rate": 0.234375,
+          "actual_away_rate": 0.328125
+        }
+      },
+      "n_common": 64,
+      "n_total": 64
+    },
+    "2023_recent_internationals": {
+      "models": {
+        "current_production_blend": {
+          "actual_away_rate": 0.296706,
+          "actual_draw_rate": 0.23111,
+          "actual_home_rate": 0.472184,
+          "avg_pred_away": 0.349474,
+          "avg_pred_draw": 0.188215,
+          "avg_pred_home": 0.462311,
+          "brier": 0.568896,
+          "log_loss": 0.963573,
+          "n_matches": 3613,
+          "rps": 0.194852,
+          "top1": 0.559369
+        },
+        "elo": {
+          "actual_away_rate": 0.296706,
+          "actual_draw_rate": 0.23111,
+          "actual_home_rate": 0.472184,
+          "avg_pred_away": 0.337754,
+          "avg_pred_draw": 0.221895,
+          "avg_pred_home": 0.440351,
+          "brier": 0.540898,
+          "log_loss": 0.923972,
+          "n_matches": 3613,
+          "rps": 0.18357,
+          "top1": 0.590368
+        },
+        "goal": {
+          "actual_away_rate": 0.296706,
+          "actual_draw_rate": 0.23111,
+          "actual_home_rate": 0.472184,
+          "avg_pred_away": 0.32177,
+          "avg_pred_draw": 0.23284,
+          "avg_pred_home": 0.445391,
+          "brier": 0.546794,
+          "log_loss": 0.927777,
+          "n_matches": 3613,
+          "rps": 0.186741,
+          "top1": 0.572101
+        },
+        "pi": {
+          "actual_away_rate": 0.296706,
+          "actual_draw_rate": 0.23111,
+          "actual_home_rate": 0.472184,
+          "avg_pred_away": 0.349474,
+          "avg_pred_draw": 0.188215,
+          "avg_pred_home": 0.462311,
+          "brier": 0.568896,
+          "log_loss": 0.963573,
+          "n_matches": 3613,
+          "rps": 0.194852,
+          "top1": 0.559369
+        },
+        "elo60_goal40": {
+          "n_matches": 3613,
+          "log_loss": 0.917137,
+          "rps": 0.182106,
+          "brier": 0.53743,
+          "top1": 0.5987,
+          "avg_pred_home": 0.44065,
+          "avg_pred_draw": 0.22809,
+          "avg_pred_away": 0.33126,
+          "actual_home_rate": 0.472184,
+          "actual_draw_rate": 0.23111,
+          "actual_away_rate": 0.296706
+        }
+      },
+      "n_common": 3613,
+      "n_total": 3613
+    }
+  },
+  "production_blend_trace": {
+    "configured_elo_weight_default": 0.0,
+    "configured_pi_weight_default": 1.0,
+    "matchup_specific_or_fallback_logic_changes_weights": false,
+    "runtime_path": "soccer_ev_model.ev_workflow._probs_from_ratings_blend and goal_model_comparison current blend adapter",
+    "why_tested_current_blend_is_pure_pi": "The runtime blend defaults are w_pi=1.0 and w_elo=0.0; no renormalization/fallback changed them in this audit path."
+  },
+  "sample_definitions": {
+    "combined_2022_date_window": {
+      "models": {
+        "current_production_blend": {
+          "actual_away_rate": 0.321839,
+          "actual_draw_rate": 0.241379,
+          "actual_home_rate": 0.436782,
+          "avg_pred_away": 0.332514,
+          "avg_pred_draw": 0.192118,
+          "avg_pred_home": 0.475367,
+          "brier": 0.621294,
+          "log_loss": 1.048151,
+          "n_matches": 87,
+          "rps": 0.221343,
+          "top1": 0.482759
+        },
+        "elo": {
+          "actual_away_rate": 0.321839,
+          "actual_draw_rate": 0.241379,
+          "actual_home_rate": 0.436782,
+          "avg_pred_away": 0.32828,
+          "avg_pred_draw": 0.231037,
+          "avg_pred_home": 0.440683,
+          "brier": 0.600924,
+          "log_loss": 1.011122,
+          "n_matches": 87,
+          "rps": 0.212562,
+          "top1": 0.505747
+        },
+        "goal": {
+          "actual_away_rate": 0.321839,
+          "actual_draw_rate": 0.241379,
+          "actual_home_rate": 0.436782,
+          "avg_pred_away": 0.32317,
+          "avg_pred_draw": 0.270408,
+          "avg_pred_home": 0.406422,
+          "brier": 0.606346,
+          "log_loss": 1.019721,
+          "n_matches": 87,
+          "rps": 0.212544,
+          "top1": 0.517241
+        },
+        "pi": {
+          "actual_away_rate": 0.321839,
+          "actual_draw_rate": 0.241379,
+          "actual_home_rate": 0.436782,
+          "avg_pred_away": 0.332514,
+          "avg_pred_draw": 0.192118,
+          "avg_pred_home": 0.475367,
+          "brier": 0.621294,
+          "log_loss": 1.048151,
+          "n_matches": 87,
+          "rps": 0.221343,
+          "top1": 0.482759
+        }
+      },
+      "n_common": 87,
+      "n_total": 87,
+      "tournaments": {
+        "FIFA World Cup": 64,
+        "Friendly": 23
+      }
+    },
+    "non_wc_same_date_window": {
+      "models": {
+        "current_production_blend": {
+          "actual_away_rate": 0.304348,
+          "actual_draw_rate": 0.26087,
+          "actual_home_rate": 0.434783,
+          "avg_pred_away": 0.329555,
+          "avg_pred_draw": 0.153269,
+          "avg_pred_home": 0.517176,
+          "brier": 0.717058,
+          "log_loss": 1.223881,
+          "n_matches": 23,
+          "rps": 0.265189,
+          "top1": 0.478261
+        },
+        "elo": {
+          "actual_away_rate": 0.304348,
+          "actual_draw_rate": 0.26087,
+          "actual_home_rate": 0.434783,
+          "avg_pred_away": 0.319216,
+          "avg_pred_draw": 0.224019,
+          "avg_pred_home": 0.456765,
+          "brier": 0.57226,
+          "log_loss": 0.97627,
+          "n_matches": 23,
+          "rps": 0.195908,
+          "top1": 0.565217
+        },
+        "goal": {
+          "actual_away_rate": 0.304348,
+          "actual_draw_rate": 0.26087,
+          "actual_home_rate": 0.434783,
+          "avg_pred_away": 0.281405,
+          "avg_pred_draw": 0.218809,
+          "avg_pred_home": 0.499786,
+          "brier": 0.586464,
+          "log_loss": 1.006383,
+          "n_matches": 23,
+          "rps": 0.203206,
+          "top1": 0.521739
+        },
+        "pi": {
+          "actual_away_rate": 0.304348,
+          "actual_draw_rate": 0.26087,
+          "actual_home_rate": 0.434783,
+          "avg_pred_away": 0.329555,
+          "avg_pred_draw": 0.153269,
+          "avg_pred_home": 0.517176,
+          "brier": 0.717058,
+          "log_loss": 1.223881,
+          "n_matches": 23,
+          "rps": 0.265189,
+          "top1": 0.478261
+        }
+      },
+      "n_common": 23,
+      "n_total": 23,
+      "tournaments": {
+        "Friendly": 23
+      }
+    },
+    "pure_2022_world_cup": {
+      "models": {
+        "current_production_blend": {
+          "actual_away_rate": 0.328125,
+          "actual_draw_rate": 0.234375,
+          "actual_home_rate": 0.4375,
+          "avg_pred_away": 0.333578,
+          "avg_pred_draw": 0.20608,
+          "avg_pred_home": 0.460342,
+          "brier": 0.586879,
+          "log_loss": 0.984998,
+          "n_matches": 64,
+          "rps": 0.205586,
+          "top1": 0.484375
+        },
+        "elo": {
+          "actual_away_rate": 0.328125,
+          "actual_draw_rate": 0.234375,
+          "actual_home_rate": 0.4375,
+          "avg_pred_away": 0.331538,
+          "avg_pred_draw": 0.233558,
+          "avg_pred_home": 0.434904,
+          "brier": 0.611225,
+          "log_loss": 1.023647,
+          "n_matches": 64,
+          "rps": 0.218547,
+          "top1": 0.484375
+        },
+        "goal": {
+          "actual_away_rate": 0.328125,
+          "actual_draw_rate": 0.234375,
+          "actual_home_rate": 0.4375,
+          "avg_pred_away": 0.338179,
+          "avg_pred_draw": 0.288952,
+          "avg_pred_home": 0.372869,
+          "brier": 0.613491,
+          "log_loss": 1.024514,
+          "n_matches": 64,
+          "rps": 0.2159,
+          "top1": 0.515625
+        },
+        "pi": {
+          "actual_away_rate": 0.328125,
+          "actual_draw_rate": 0.234375,
+          "actual_home_rate": 0.4375,
+          "avg_pred_away": 0.333578,
+          "avg_pred_draw": 0.20608,
+          "avg_pred_home": 0.460342,
+          "brier": 0.586879,
+          "log_loss": 0.984998,
+          "n_matches": 64,
+          "rps": 0.205586,
+          "top1": 0.484375
+        }
+      },
+      "n_common": 64,
+      "n_total": 64,
+      "tournaments": {
+        "FIFA World Cup": 64
+      }
+    }
+  },
+  "note": "Phase 3 corrected sample definitions. 2014/2018/2022 WC blocks are pure 64-match tournaments. 2023+ is 3,613 matches. Aggregate is 3,805. Elo60/Goal40 and Pi30/Elo40/Goal30 blends added. Earlier 'combined_2022_date_window' (87) and 'non_wc_same_date_window' (23) retained only for Phase 1 audit trail."
+}
