@@ -102,6 +102,16 @@ from dashboard.text_format import (  # noqa: E402
     format_group_label as _format_group_label,
     format_matchday_label as _format_matchday_label,
 )
+from dashboard.context_cards import (  # noqa: E402
+    build_tournament_snapshot as _build_tournament_snapshot,
+    highest_model_confidence as _highest_model_confidence,
+    pick_smart_default_date as _pick_smart_default_date,
+    render_highest_confidence as _render_highest_confidence,
+    render_tournament_snapshot as _render_tournament_snapshot,
+)
+from dashboard.data_loader import (  # noqa: E402
+    list_dates_with_unplayed as _list_dates_with_unplayed,
+)
 from dashboard.team_resolution import (  # noqa: E402
     resolve_match_for_prediction as _resolve_match_for_prediction,
 )
@@ -133,8 +143,41 @@ TIER_TO_STYLE = {
 
 MARKET_LABEL = {"home": "Home Win", "draw": "Draw", "away": "Away Win"}
 
-# Anchor "today" for the auto-populate flow. 2026-06-16 in the brief.
+# Anchor "today" for the auto-populate flow. Used as a *fallback* when
+# the on-disk schedule is empty or unreadable; the live default in the
+# date picker comes from :func:`_smart_default_date` below.
 DEFAULT_TODAY = _date(2026, 6, 16)
+
+
+def _smart_default_date() -> _date:
+    """Return the smart default date for the date_input widgets.
+
+    Computed once per Streamlit session (cached on the first call) from
+    today's date and the list of dates with unplayed matches on disk.
+    Falls back to :data:`DEFAULT_TODAY` if the schedule is unreadable.
+
+    The "compute once" rule keeps the value stable across the seven
+    ``st.date_input`` widgets in the dashboard — once the user has
+    clicked through to a particular date, every subsequent widget sees
+    the same default; user choices are preserved by Streamlit's
+    key-based session state.
+    """
+    global _SMART_DEFAULT_CACHE
+    if _SMART_DEFAULT_CACHE is not None:
+        return _SMART_DEFAULT_CACHE
+    try:
+        _SMART_DEFAULT_CACHE = _pick_smart_default_date(
+            _date.today(), _list_dates_with_unplayed(),
+        )
+    except Exception:
+        # Defensive: never crash the page over a default.
+        _SMART_DEFAULT_CACHE = DEFAULT_TODAY
+    return _SMART_DEFAULT_CACHE
+
+
+# Module-level cache for :func:`_smart_default_date`. ``None`` means
+# "not yet computed"; the helper sets it on the first invocation.
+_SMART_DEFAULT_CACHE: _date | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -1141,7 +1184,7 @@ def _render_auto_populate_view(
     st.subheader("📅 Pick a date")
     picked_date = st.date_input(
         "Match date",
-        value=DEFAULT_TODAY,
+        value=_smart_default_date(),
         format="YYYY-MM-DD",
         key="auto_picked_date",
     )
@@ -1309,7 +1352,7 @@ def _render_manual_view(
 
         match_date = st.date_input(
             "Match date",
-            value=DEFAULT_TODAY,
+            value=_smart_default_date(),
             format="YYYY-MM-DD",
         )
 
@@ -1577,7 +1620,7 @@ def _render_predictions_view(
     # ---- (1) date picker ---- #
     picked_date = st.date_input(
         "Match date",
-        value=DEFAULT_TODAY,
+        value=_smart_default_date(),
         format="YYYY-MM-DD",
         key=KEYS.SELECTED_DATE,
     )
@@ -1799,7 +1842,7 @@ def _render_custom_matchup_expander(
         )
         match_date = st.date_input(
             "Match date",
-            value=DEFAULT_TODAY,
+            value=_smart_default_date(),
             format="YYYY-MM-DD",
             key=KEYS.CUSTOM_DATE,
         )
@@ -1938,7 +1981,7 @@ def _render_bets_view(
     # ---- (1) date picker ---- #
     picked_date = st.date_input(
         "Match date",
-        value=DEFAULT_TODAY,
+        value=_smart_default_date(),
         format="YYYY-MM-DD",
         key=KEYS.SELECTED_DATE,
     )
@@ -2177,7 +2220,7 @@ def _render_custom_bet_expander(
         )
         match_date = st.date_input(
             "Match date",
-            value=DEFAULT_TODAY,
+            value=_smart_default_date(),
             format="YYYY-MM-DD",
             key=KEYS.CUSTOM_DATE,
         )
@@ -2463,7 +2506,7 @@ def _render_analysis_view(
     # ---- (1) date picker ---- #
     picked_date = st.date_input(
         "Match date",
-        value=DEFAULT_TODAY,
+        value=_smart_default_date(),
         format="YYYY-MM-DD",
         key=KEYS.SELECTED_DATE,
     )
@@ -2661,6 +2704,19 @@ def main() -> None:
     elo_snapshots = get_elo_snapshots()
 
     selected_view = _render_top_level_nav()
+
+    # ---- Context cards (sit between the top-level nav and the per-view
+    # dispatcher; visible BEFORE the user clicks Show Predictions). ---- #
+    _loaded_matches_for_cards = _ss_get(KEYS.LOADED_MATCHES, default=[]) or []
+    _predictions_for_cards = _ss_get(KEYS.PREDICTIONS_BY_MATCH, default={}) or {}
+    _render_tournament_snapshot(
+        _build_tournament_snapshot(_loaded_matches_for_cards),
+    )
+    _render_highest_confidence(
+        _highest_model_confidence(
+            _loaded_matches_for_cards, _predictions_for_cards,
+        ),
+    )
 
     # Route to the active section. Each section is a thin wrapper for
     # now (Phase 2); Phases 3-5 will replace them with proper renderers.
