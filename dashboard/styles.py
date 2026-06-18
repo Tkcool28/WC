@@ -284,6 +284,26 @@ hr[data-testid="stDivider"] {
   }
 }
 
+/* Context cards (Phase 8) — subtle warm/cool tints to tell Snapshot
+   from Confidence at a glance.  Both still inherit the .wc-card radius,
+   border, and padding so they sit in the same visual family as the
+   Predictions / Bets cards above.  The tints are intentionally faint;
+   the .wc-card border + shadow is what makes them read as cards. */
+.wc-snapshot-card {
+  background: rgba(255, 248, 230, 0.55);
+}
+.wc-confidence-card {
+  background: rgba(230, 244, 255, 0.55);
+}
+@media (prefers-color-scheme: dark) {
+  .wc-snapshot-card {
+    background: rgba(80, 60, 30, 0.25);
+  }
+  .wc-confidence-card {
+    background: rgba(30, 60, 90, 0.30);
+  }
+}
+
 /* Inputs (text + number) ----------------------------------------- */
 
 /* Match the 48 px iOS/Material touch-target floor.  Streamlit's
