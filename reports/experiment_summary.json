@@ -1,0 +1,83 @@
+{
+  "runtime_seconds": 49.8,
+  "n_common": 87,
+  "n_total": 87,
+  "comparison": {
+    "holdout": "2022_WC",
+    "n_common": 87,
+    "n_total": 87,
+    "exclusions": {
+      "pi_missing": 0,
+      "elo_missing": 0,
+      "goal_missing": 0
+    },
+    "pi": {
+      "n_matches": 87,
+      "log_loss": 1.0482,
+      "rps": 0.2213,
+      "brier": 0.6213,
+      "top1": 0.483,
+      "home_cal": 0.437,
+      "draw_cal": 0.241,
+      "away_cal": 0.322
+    },
+    "elo": {
+      "n_matches": 87,
+      "log_loss": 1.0111,
+      "rps": 0.2126,
+      "brier": 0.6009,
+      "top1": 0.506,
+      "home_cal": 0.437,
+      "draw_cal": 0.241,
+      "away_cal": 0.322
+    },
+    "blend": {
+      "n_matches": 87,
+      "log_loss": 1.0482,
+      "rps": 0.2213,
+      "brier": 0.6213,
+      "top1": 0.483,
+      "home_cal": 0.437,
+      "draw_cal": 0.241,
+      "away_cal": 0.322
+    },
+    "goal": {
+      "n_matches": 87,
+      "log_loss": 1.0197,
+      "rps": 0.2125,
+      "brier": 0.6063,
+      "top1": 0.517,
+      "home_cal": 0.437,
+      "draw_cal": 0.241,
+      "away_cal": 0.322,
+      "mae_home_goals": 1.13,
+      "mae_away_goals": 0.87,
+      "mae_total_goals": 1.499,
+      "poisson_nll": 3.0291,
+      "exact_score": 0.126
+    }
+  },
+  "blend_best": "blend_40_60",
+  "confirmation": {
+    "holdout": "2022_WC",
+    "n": 87,
+    "same_top_count": 76,
+    "same_top_rate": 0.8736,
+    "mild_disagreement": 42,
+    "strong_disagreement": 11
+  },
+  "subgroups": {
+    "neutral": {
+      "n": 65,
+      "log_loss": 1.0107,
+      "rps": 0.2087,
+      "top1": 0.523
+    },
+    "non_neutral": {
+      "n": 22,
+      "log_loss": 1.0465,
+      "rps": 0.224,
+      "top1": 0.5
+    }
+  }
+}

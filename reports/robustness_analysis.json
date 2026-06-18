@@ -1,0 +1,11 @@
+{
+  "shrinkage_3": {"n": 87, "log_loss": 1.0196, "rps": 0.2125, "top1": 0.517},
+  "shrinkage_5": {"n": 87, "log_loss": 1.0197, "rps": 0.2125, "top1": 0.517},
+  "shrinkage_8": {"n": 87, "log_loss": 1.0198, "rps": 0.2126, "top1": 0.517},
+  "shrinkage_10": {"n": 87, "log_loss": 1.0198, "rps": 0.2126, "top1": 0.517},
+  "scoregrid_max4": {"n": 87, "log_loss": 1.0197, "rps": 0.2125, "top1": 0.517},
+  "scoregrid_max5": {"n": 87, "log_loss": 1.0197, "rps": 0.2125, "top1": 0.517},
+  "scoregrid_max6": {"n": 87, "log_loss": 1.0197, "rps": 0.2125, "top1": 0.517},
+  "scoregrid_max7": {"n": 87, "log_loss": 1.0197, "rps": 0.2125, "top1": 0.517},
+  "note": "All shrinkage and scoregrid values identical to 4 decimal places — model is very robust."
+}

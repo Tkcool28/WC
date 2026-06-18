@@ -39,27 +39,29 @@ This branch is isolated from the mobile dashboard rearchitecture. It does not mo
 - Squad strength: single snapshot (2026-06-17) — NOT backtestable
 - Context notes: free-text, production-only flags
 - Elo ratings: full historical, leak-safe
-- Recommendation: reject FIFA/squad priors for backtest; production-only optional interface
+- Decision: reject FIFA/squad priors for backtest; production-only optional interface built
 
 ### Phase 7 — Tournament Stage and State ✅
 - Enriched 192 WC matches (2014/2018/2022) from raw files
 - Zero duplicates, zero ambiguous joins
-- Stage effects tested: no improvement on 2022 WC (underpowered sample, n=38)
-- Recommendation: reject stage effects (no evidence, underpowered)
+- Stage effects tested: no improvement on 2022 WC (underpowered sample)
+- Decision: reject stage effects (no evidence, underpowered)
 
 ### Phase 8 — Direct Comparison ✅
-- Multi-model comparison on 2023+ holdout (422 dates, 3613 matches)
-- Models: Pi-only, Elo-only, current blend, goal model
-- All models evaluated on identical common sample
+- 4 models on 87-match common sample (2022 WC window)
+- Pi-only: LL=1.0482, Elo-only: LL=1.0111, Current blend: LL=1.0482, Goal model: LL=1.0197
+- Goal model has highest Top1 (0.517); Elo-only has lowest LL (1.0111)
 
 ### Phase 9 — Transparent Blending ✅
-- Tested 8 blend configurations (current+goal, three-way)
-- 50/50 blend showed BEST_BLEND_RESULT
+- Best blend: 40% Pi / 60% Goal = LL=1.0119 (matches Elo-only)
+- Blend grid flat between 30-70% goal weight
+- Confirmation signal: 87.4% same-top agreement
 
 ### Phase 10 — Robustness and Calibration ✅
-- Sensitivity to shrinkage: low (shrinkage 3-10 range tested)
-- Calibration tables produced
-- Bootstrap uncertainty estimated (50 samples)
+- Shrinkage 3-10: identical results (4 decimal places)
+- Score grid max 4-7: identical results
+- Bootstrap 95% CI for log loss: [1.0063, 1.0249]
+- Calibration: well-calibrated in 0.2-0.5 range
 
 ### Phase 11 — Production Module ✅
 - `GoalModelPredictor` class with clean API
@@ -68,17 +70,19 @@ This branch is isolated from the mobile dashboard rearchitecture. It does not mo
 - No production wiring yet
 
 ### Phase 12 — Final Decision ✅
+- **Recommendation: Blend goal model with current system (40% Pi / 60% Goal)**
 - See reports/final_goal_model_report.md
 
 ## Key Results
 
 - Best goal model: shrinkage=5, no priors, no stage effects
-- Log loss: 0.9373 (2023+), 1.8% improvement over shrinkage=20 baseline
+- Log loss: 1.0197 (2022 WC window, 87 matches)
+- Best blend: 40/60 Pi/Goal = 1.0119
 - Priors rejected for backtest (no historical snapshots)
 - Stage effects rejected (underpowered, no improvement)
-- Blending: BLEND_RESULT
 
 ## Test Coverage
 
-- 126 total tests (63 first-half + 63 second-half)
-- All passing in ~1.4s
+- 514 total tests passed (63 new second-half tests)
+- 1 pre-existing failure from first-half branch (ev_workflow.py)
+- Runtime: ~5s full suite

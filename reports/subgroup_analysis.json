@@ -1,0 +1,78 @@
+{
+  "stage_subgroups": {
+    "world_cup": {
+      "n": 64,
+      "log_loss": 1.0245,
+      "rps": 0.2159,
+      "brier": 0.6135,
+      "top1": 0.516,
+      "home_cal": 0.438,
+      "draw_cal": 0.234,
+      "away_cal": 0.328,
+      "mae_total_goals": 1.476,
+      "exact_score": 0.109
+    },
+    "non_world_cup": {
+      "n": 23,
+      "log_loss": 1.0064,
+      "rps": 0.2032,
+      "brier": 0.5865,
+      "top1": 0.522,
+      "home_cal": 0.435,
+      "draw_cal": 0.261,
+      "away_cal": 0.304,
+      "mae_total_goals": 1.562,
+      "exact_score": 0.174
+    },
+    "neutral": {
+      "n": 65,
+      "log_loss": 1.0107,
+      "rps": 0.2087,
+      "brier": 0.6038,
+      "top1": 0.523,
+      "home_cal": 0.446,
+      "draw_cal": 0.246,
+      "away_cal": 0.308,
+      "mae_total_goals": 1.485,
+      "exact_score": 0.123
+    },
+    "home_away": {
+      "n": 22,
+      "log_loss": 1.0465,
+      "rps": 0.224,
+      "brier": 0.6138,
+      "top1": 0.5,
+      "home_cal": 0.409,
+      "draw_cal": 0.227,
+      "away_cal": 0.364,
+      "mae_total_goals": 1.54,
+      "exact_score": 0.136
+    }
+  },
+  "tournament_subgroups": {
+    "friendly": {
+      "n": 23,
+      "log_loss": 1.0064,
+      "rps": 0.2032,
+      "brier": 0.5865,
+      "top1": 0.522,
+      "home_cal": 0.435,
+      "draw_cal": 0.261,
+      "away_cal": 0.304,
+      "mae_total_goals": 1.562,
+      "exact_score": 0.174
+    },
+    "world_cup": {
+      "n": 64,
+      "log_loss": 1.0245,
+      "rps": 0.2159,
+      "brier": 0.6135,
+      "top1": 0.516,
+      "home_cal": 0.438,
+      "draw_cal": 0.234,
+      "away_cal": 0.328,
+      "mae_total_goals": 1.476,
+      "exact_score": 0.109
+    }
+  }
+}
