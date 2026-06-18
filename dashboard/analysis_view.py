@@ -222,7 +222,9 @@ def render_analysis_view(
 
     # ---- 8. Squad Context ---- #
     with st.expander("👥 Squad Context", expanded=False):
-        _render_squad_context(match_meta, name_to_id=name_to_id)
+        _render_squad_context(
+            match_meta, prediction=prediction, name_to_id=name_to_id,
+        )
 
     # ---- 9. Group Context ---- #
     with st.expander("🏆 Group Context", expanded=False):
@@ -446,8 +448,35 @@ def _render_poisson_section(prediction: dict) -> None:
             pass
 
 
+def _looks_like_canonical_id(value: Any) -> bool:
+    """Return True iff ``value`` looks like a canonical ID (string, not
+    a numeric schedule ``fd_id``).
+
+    Canonical IDs are short non-numeric strings like ``"ENG"``, ``"POR"``,
+    ``"COD"``.  Numeric schedule IDs (e.g. ``770``, ``"770"``) and
+    anything containing only digits are rejected so we never pass them
+    to :func:`dashboard.context_loader.get_match_context`.
+    """
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        # Plain ``int`` schedule fd_ids — reject.
+        return False
+    s = str(value).strip()
+    if not s:
+        return False
+    # Pure-digit strings (or anything ``str(int)``-able) are schedule ids.
+    if s.isdigit():
+        return False
+    return True
+
+
 def _render_squad_context(
     match_meta: dict,
+    *,
+    prediction: dict | None = None,
     name_to_id: dict | None = None,
 ) -> None:
     """Section 8: manual squad context from Phase 4.
@@ -456,25 +485,43 @@ def _render_squad_context(
     Phase 4 manual CSV data is the single source of truth.  We never
     recompute squad strength; we only render what's in the manual
     snapshot.
+
+    Canonical ID routing — priority order:
+
+    1. ``prediction["canonical_home_id"]`` / ``canonical_away_id`` if
+       they look like canonical IDs (non-numeric strings).
+    2. ``match_meta["canonical_home_id"]`` / ``canonical_away_id`` as
+       fallback when the prediction is absent.
+    3. Otherwise show a calm unavailable caption.  Schedule ``fd_ids``
+       (numeric schedule IDs from football-data.org) are NEVER passed
+       to :func:`dashboard.context_loader.get_match_context`.
     """
     _ = name_to_id  # reserved for future Elo lookups
-    home_id = (
-        match_meta.get("home_team_id")
-        or match_meta.get("home_id")
-    )
-    away_id = (
-        match_meta.get("away_team_id")
-        or match_meta.get("away_id")
-    )
-    if not home_id or not away_id:
+    pred = prediction or {}
+    meta = match_meta or {}
+
+    home_canonical = pred.get("canonical_home_id")
+    if not _looks_like_canonical_id(home_canonical):
+        home_canonical = meta.get("canonical_home_id")
+
+    away_canonical = pred.get("canonical_away_id")
+    if not _looks_like_canonical_id(away_canonical):
+        away_canonical = meta.get("canonical_away_id")
+
+    if not _looks_like_canonical_id(home_canonical) or not _looks_like_canonical_id(
+        away_canonical
+    ):
         st.caption(
-            "No canonical team ids on this match — squad context not "
-            "available."
+            "Squad context not available — no canonical team ids on this "
+            "match."
         )
         return
     try:
         from dashboard.context_loader import get_match_context
-        ctx = get_match_context(str(home_id), str(away_id))
+        ctx = get_match_context(
+            str(home_canonical).strip(),
+            str(away_canonical).strip(),
+        )
     except Exception as exc:
         st.warning(f"Squad context unavailable: {exc}")
         return

@@ -231,20 +231,20 @@ def _build_why_text(prediction: dict, identity_warnings: list[str] | None = None
         )
 
 
-def _translate_warnings(raw_warnings: list[str]) -> list[str]:
-    """Translate a list of raw warnings via ``ux_presenters`` and dedupe.
+def _consolidated_warnings(prediction: dict) -> list[str]:
+    """Return at most ONE concise user-facing warning for this card.
 
-    Returns a list of human-readable warnings — no raw ``canonical=`` /
-    ``status=history_missing`` / ``neutral pi-rating`` strings ever leak
-    past this function.
+    Delegates to :func:`dashboard.casual_warnings.consolidate_casual_warnings`
+    so the rule ordering (identity_unresolved > history_missing >
+    limited_data > calibration_caution > other) lives in one place.  A
+    broken / missing helper falls back to an empty list — never to the
+    raw translated stack.
     """
-    if not raw_warnings:
-        return []
     try:
-        from dashboard.ux_presenters import translate_and_dedupe_warnings
-        return translate_and_dedupe_warnings(list(raw_warnings))
+        from dashboard.casual_warnings import consolidate_casual_warnings
+        return consolidate_casual_warnings(prediction)
     except Exception:
-        return [str(w) for w in raw_warnings if w]
+        return []
 
 
 # --------------------------------------------------------------------------- #
@@ -330,13 +330,10 @@ def render_prediction_card(
     with st.popover("❓ Why this pick?", use_container_width=False):
         st.markdown(why_text)
 
-    # ---- translated warnings (no raw internal codes) ---- #
+    # ---- consolidated warnings (at most one st.info block) ---- #
     if show_warnings:
-        assessment = prediction.get("confidence") or {}
-        raw_warnings = list(assessment.get("warnings") or [])
-        all_raw = list(identity_warnings) + raw_warnings
-        translated = _translate_warnings(all_raw)
-        for w in translated:
+        consolidated = _consolidated_warnings(prediction)
+        for w in consolidated:
             st.info(f"ℹ️ {w}")
 
 
