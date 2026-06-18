@@ -196,58 +196,72 @@ def _calibrate_probs(pi_probs: dict[str, float], calibrated_top_p: float) -> dic
     return calibrated
 
 
-def evaluate_match(
+def predict_match(
     home_team: str,
     away_team: str,
     home_team_id: int,
     away_team_id: int,
     date: str,
-    book_home_odds: float,
-    book_draw_odds: float,
-    book_away_odds: float,
     ratings: dict,
-    min_edge: float = 0.03,
+    *,
     home_elo: float | None = None,
     away_elo: float | None = None,
     blend_w_pi: float = 0.5,
     blend_w_elo: float = 0.5,
-    *,
     identity_unresolved: bool = False,
+    canonical_home_id: str | None = None,
+    canonical_away_id: str | None = None,
 ) -> dict:
-    """Evaluate a single matchup end-to-end and return a comprehensive dict.
+    """Pure model-only prediction. NO odds required.
 
-    This is the function the dashboard calls per match. It bundles:
-      - Raw pi-rating (or pi+Elo blend) probs
-      - Calibrated probs (corrected via the 9,678-match backtest)
-      - Book no-vig (fair) probabilities
-      - Edges (pi - book) per market
-      - Full confidence assessment (tier A/B/C/D, warnings, banner)
-      - Pre-filtered +EV flags (markets with edge >= min_edge)
+    Computes the raw pi-rating (or pi+Elo blend) probabilities, the
+    full confidence assessment, and the warning banner for a single
+    matchup. Returns a dict shaped to be consumable by the mobile
+    dashboard and by `evaluate_market` (the market layer).
+
+    The returned dict contains ONLY model-derived keys. It MUST NOT
+    contain `book_odds`, `book_fair`, `calibrated_pi`, `edges`, or
+    `plus_ev_flags` — those are the responsibility of `evaluate_market`.
 
     Args:
-        home_team, away_team: human-readable team names
-        home_team_id, away_team_id: integer team ids (must match `ratings` keys)
-        date: ISO date string (e.g. "2026-06-16")
-        book_home_odds, book_draw_odds, book_away_odds: American odds
-        ratings: output of compute_pi_ratings() at the cutoff date
-        min_edge: minimum edge to flag as +EV (default 0.03 = 3%)
-        home_elo, away_elo: optional Elo ratings (if provided, the model uses
-            a hand-tuned blend of pi-rating and Elo; if None, pure pi-rating).
-            Hand-tuned weights from scripts/blend_backtest.py: w_pi=0.5,
-            w_elo=0.5 (equal blend) was the best of 3 candidates on the 2022
-            WC walk-forward (RPS 0.222 vs 0.230 for pi-only, n=64).
-        blend_w_pi, blend_w_elo: blend weights (default 0.5/0.5). Ignored if
-            home_elo / away_elo are None.
-        identity_unresolved: keyword-only. Set by the dashboard when the
+        home_team, away_team: human-readable team names.
+        home_team_id, away_team_id: integer team ids (must match `ratings` keys).
+        date: ISO date string (e.g. "2026-06-16").
+        ratings: output of compute_pi_ratings() at the cutoff date.
+        home_elo, away_elo: optional Elo ratings. If BOTH are provided,
+            the model uses a hand-tuned blend of pi-rating and Elo; if
+            either is None, the model is pure pi-rating. Hand-tuned
+            weights from scripts/blend_backtest.py: w_pi=0.5, w_elo=0.5
+            was the best of 3 candidates on the 2022 WC walk-forward
+            (RPS 0.222 vs 0.230 for pi-only, n=64).
+        blend_w_pi, blend_w_elo: blend weights (default 0.5/0.5).
+            Ignored if home_elo or away_elo is None.
+        identity_unresolved: keyword-only. Set by the dashboard when
             team identity could not be resolved through the canonical
-            registry (status="identity_unresolved"). Propagates into the
-            returned confidence dict as a separate flag so the renderer
-            can show a distinct warning without conflating it with the
-            "low data" tier that comes from genuine pi-rating sparsity.
+            registry. Propagated into the returned `confidence` dict
+            as a separate flag so the renderer can show a distinct
+            warning without conflating it with the "low data" tier.
+        canonical_home_id, canonical_away_id: optional 3-letter
+            canonical team ids (e.g. "ARG", "BRA"). Surfaced in the
+            result so downstream renderers don't have to re-look-up
+            identities. Empty string if unresolved.
 
     Returns:
-        dict with keys: home_team, away_team, date, book_odds, book_fair,
-        pi_probs, calibrated_pi, edges, confidence, plus_ev_flags, banner
+        dict with at least these keys:
+          - home_team, away_team
+          - home_team_id, away_team_id
+          - date
+          - pi_probs           (3-way dict, the blend or pure pi)
+          - blend_probs        (3-way dict, alias of pi_probs)
+          - pi_only_probs      (3-way dict, pure pi)
+          - elo_only_probs     (3-way dict or None)
+          - blend_was_used     (bool)
+          - blend_w_pi         (float, the weight used)
+          - blend_w_elo        (float, the weight used)
+          - confidence         (full assess_match_confidence dict)
+          - banner             (str)
+          - canonical_home_id  (str, best-effort; "" if unresolved)
+          - canonical_away_id  (str, best-effort; "" if unresolved)
     """
     # Build a synthetic match dict for the existing probs helper
     match = {
@@ -274,10 +288,6 @@ def evaluate_match(
         elo_only = None
         blend_was_used = False
 
-    # No-vig book probabilities
-    imp = implied_probs(book_home_odds, book_draw_odds, book_away_odds)
-    book_fair = imp["fair"]
-
     # Confidence assessment
     home_exp = get_team_experience(ratings, home_team_id)
     away_exp = get_team_experience(ratings, away_team_id)
@@ -294,19 +304,110 @@ def evaluate_match(
     # functions continue to work unchanged.
     confidence["identity_unresolved"] = bool(identity_unresolved)
 
-    # Calibrated pi probs. NOTE: this is consumed ONLY by the +EV flag
-    # pipeline (`plus_ev_flags` below). The dashboard prediction summary
-    # intentionally displays the raw blend (`pi_probs`/`blend_probs`),
-    # not these calibrated values — calibration is an EV-layer concern.
-    calibrated_pi = _calibrate_probs(pi, confidence["calibrated_p"])
+    banner = render_warning_banner(confidence)
 
-    # Edges (raw pi minus book_fair). This is the +EV signal.
+    return {
+        "home_team": home_team,
+        "away_team": away_team,
+        "home_team_id": home_team_id,
+        "away_team_id": away_team_id,
+        "date": date,
+        "pi_probs": {k: round(v, 4) for k, v in pi.items()},
+        # Explicit alias: `pi_probs` is the Pi+Elo blend when Elo is supplied,
+        # else pure pi. `blend_probs` is the same dict under a clearer name.
+        # Both keys are kept for backward compatibility with existing readers.
+        "blend_probs": {k: round(v, 4) for k, v in pi.items()},
+        "pi_only_probs": {k: round(v, 4) for k, v in pi_only.items()},
+        "elo_only_probs": {k: round(v, 4) for k, v in elo_only.items()} if elo_only is not None else None,
+        "blend_was_used": blend_was_used,
+        "blend_w_pi": blend_w_pi,
+        "blend_w_elo": blend_w_elo,
+        "confidence": confidence,
+        "banner": banner,
+        "canonical_home_id": canonical_home_id or "",
+        "canonical_away_id": canonical_away_id or "",
+    }
+
+
+def evaluate_market(
+    prediction: dict,
+    book_home_odds: float,
+    book_draw_odds: float,
+    book_away_odds: float,
+    min_edge: float = 0.03,
+    *,
+    identity_unresolved: bool = False,
+) -> dict:
+    """Market evaluation. REQUIRES valid odds.
+
+    Takes a prediction dict (output of `predict_match`) and book odds,
+    and returns the market-derived keys: book no-vig probs, calibration,
+    edges, +EV flags, plus summary signals (divergence label, largest
+    delta). This is the layer the betting-value UI consumes.
+
+    Args:
+        prediction: dict produced by `predict_match`. Must contain at
+            minimum: `pi_probs` (3-way dict), `confidence` (with key
+            `calibrated_p`), `home_team`, `away_team`.
+        book_home_odds, book_draw_odds, book_away_odds: American odds.
+            Must be valid (non-zero, in range). Inherits the same
+            `ValueError` semantics as `no_vig.remove_vig`.
+        min_edge: minimum edge to flag as +EV (default 0.03 = 3%).
+        identity_unresolved: keyword-only. Surfaced on the
+            `confidence["identity_unresolved"]` flag for backward
+            compatibility with `evaluate_match`'s contract. The
+            predict_match output already carries the canonical flag;
+            this only changes the output of `evaluate_market` when
+            called with a prediction dict that does NOT include the
+            identity flag (rare).
+
+    Returns:
+        dict with at least these keys:
+          - book_odds            (dict of label -> float)
+          - book_fair            (no-vig 3-way dict, rounded to 4 dp)
+          - calibrated_pi        (3-way dict, rounded to 4 dp)
+          - edges                (3-way dict, rounded to 4 dp)
+          - plus_ev_flags        (list of {market, edge, ...})
+          - plus_ev_count        (int, len(plus_ev_flags))
+          - market_divergence    (str or None — label from prediction_summary)
+          - largest_market_delta (dict or None — from prediction_summary)
+
+    Raises:
+        ValueError: if any odds is zero or out-of-range (propagated
+            from `no_vig.remove_vig` via `implied_probs`).
+        ValueError: if `prediction` is missing required keys.
+    """
+    # ---- validate prediction dict ----
+    required = ("pi_probs", "confidence")
+    for k in required:
+        if k not in prediction:
+            raise ValueError(
+                f"evaluate_market: prediction dict missing required key {k!r}"
+            )
+    pi_probs = prediction["pi_probs"]
+    confidence = prediction.get("confidence") or {}
+    if "calibrated_p" not in confidence:
+        raise ValueError(
+            "evaluate_market: prediction['confidence'] missing 'calibrated_p'"
+        )
+
+    # ---- book no-vig probabilities (may raise ValueError) ----
+    imp = implied_probs(book_home_odds, book_draw_odds, book_away_odds)
+    book_fair = imp["fair"]
+
+    # ---- calibrated pi probs. NOTE: consumed ONLY by the +EV flag
+    # pipeline below. The dashboard prediction summary intentionally
+    # displays the raw blend (`pi_probs`/`blend_probs`), not these
+    # calibrated values — calibration is an EV-layer concern. ----
+    calibrated_pi = _calibrate_probs(pi_probs, confidence["calibrated_p"])
+
+    # ---- edges (raw pi minus book_fair). This is the +EV signal. ----
     edges = {
-        m: round(pi[m] - book_fair[m], 4)
+        m: round(pi_probs[m] - book_fair[m], 4)
         for m in ("home", "draw", "away")
     }
 
-    # +EV flags (pre-filtered by min_edge)
+    # ---- +EV flags (pre-filtered by min_edge) ----
     plus_ev_flags = []
     for market in ("home", "draw", "away"):
         if edges[market] >= min_edge:
@@ -318,32 +419,127 @@ def evaluate_match(
             })
     plus_ev_flags.sort(key=lambda f: -f["edge"])
 
-    banner = render_warning_banner(confidence)
+    # ---- market-divergence summary signals (optional, additive) ----
+    # Imported lazily here to keep this module's import graph flat for
+    # callers that only need the core market math.
+    try:
+        from .prediction_summary import (
+            largest_market_delta,
+            market_divergence_label,
+        )
+        # Build a pct-scale deltas dict (matches the contract in
+        # `prediction_summary.largest_market_delta`: model - market,
+        # in percentage points).
+        deltas_pct = {
+            m: round((pi_probs[m] - book_fair[m]) * 100, 1)
+            for m in ("home", "draw", "away")
+        }
+        market_divergence = market_divergence_label(deltas_pct)
+        market_labels = {
+            "home": prediction.get("home_team", "home"),
+            "away": prediction.get("away_team", "away"),
+            "draw": "Draw",
+        }
+        largest_market_delta_val = largest_market_delta(
+            deltas_pct,
+            market_labels=market_labels,
+            model_probs=pi_probs,
+            market_probs=book_fair,
+        )
+    except Exception:
+        # Never let the summary signals break the core market math.
+        market_divergence = None
+        largest_market_delta_val = None
 
     return {
-        "home_team": home_team,
-        "away_team": away_team,
-        "date": date,
         "book_odds": {
             "home": book_home_odds,
             "draw": book_draw_odds,
             "away": book_away_odds,
         },
         "book_fair": {k: round(v, 4) for k, v in book_fair.items()},
-        "pi_probs": {k: round(v, 4) for k, v in pi.items()},
-        # Explicit alias: `pi_probs` is the Pi+Elo blend when Elo is supplied,
-        # else pure pi. `blend_probs` is the same dict under a clearer name.
-        # Both keys are kept for backward compatibility with existing readers.
-        "blend_probs": {k: round(v, 4) for k, v in pi.items()},
-        "pi_only_probs": {k: round(v, 4) for k, v in pi_only.items()},
-        "elo_only_probs": {k: round(v, 4) for k, v in elo_only.items()} if elo_only is not None else None,
-        "blend_was_used": blend_was_used,
         "calibrated_pi": {k: round(v, 4) for k, v in calibrated_pi.items()},
         "edges": edges,
-        "confidence": confidence,
         "plus_ev_flags": plus_ev_flags,
-        "banner": banner,
+        "plus_ev_count": len(plus_ev_flags),
+        "market_divergence": market_divergence,
+        "largest_market_delta": largest_market_delta_val,
     }
+
+
+def evaluate_match(
+    home_team: str,
+    away_team: str,
+    home_team_id: int,
+    away_team_id: int,
+    date: str,
+    book_home_odds: float,
+    book_draw_odds: float,
+    book_away_odds: float,
+    ratings: dict,
+    min_edge: float = 0.03,
+    home_elo: float | None = None,
+    away_elo: float | None = None,
+    blend_w_pi: float = 0.5,
+    blend_w_elo: float = 0.5,
+    *,
+    identity_unresolved: bool = False,
+    canonical_home_id: str | None = None,
+    canonical_away_id: str | None = None,
+) -> dict:
+    """Backward-compat wrapper: prediction + market, merged.
+
+    This is the function the dashboard has historically called. It is
+    now a thin wrapper around `predict_match` (model-only) and
+    `evaluate_market` (market layer), returning the union of both
+    dicts so the legacy return shape — home_team / away_team / date /
+    book_odds / book_fair / pi_probs / pi_only_probs / elo_only_probs
+    / blend_probs / blend_was_used / calibrated_pi / edges / confidence
+    / plus_ev_flags / banner — is preserved verbatim.
+
+    If any of `book_home_odds`, `book_draw_odds`, `book_away_odds` is
+    `None`, the market layer is skipped and the result is the
+    prediction dict only (the dashboard does this when no bookmaker
+    prices are available). This branch is additive and does not
+    affect existing callers, all of which pass numeric odds.
+
+    Args:
+        (see `predict_match` and `evaluate_market` for the per-arg docs)
+
+    Returns:
+        dict — union of prediction and (optional) market dict. Strict
+        superset of the legacy `evaluate_match` return shape.
+    """
+    prediction = predict_match(
+        home_team=home_team,
+        away_team=away_team,
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+        date=date,
+        ratings=ratings,
+        home_elo=home_elo,
+        away_elo=away_elo,
+        blend_w_pi=blend_w_pi,
+        blend_w_elo=blend_w_elo,
+        identity_unresolved=identity_unresolved,
+        canonical_home_id=canonical_home_id,
+        canonical_away_id=canonical_away_id,
+    )
+
+    # Graceful handling: if any odds is missing, return prediction only.
+    all_odds = (book_home_odds, book_draw_odds, book_away_odds)
+    if any(o is None for o in all_odds):
+        return prediction
+
+    market = evaluate_market(
+        prediction,
+        book_home_odds=book_home_odds,
+        book_draw_odds=book_draw_odds,
+        book_away_odds=book_away_odds,
+        min_edge=min_edge,
+        identity_unresolved=identity_unresolved,
+    )
+    return {**prediction, **market}
 
 
 def find_value_bets(

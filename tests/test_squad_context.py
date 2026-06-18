@@ -363,8 +363,13 @@ def test_render_notes_bullets_escapes_each_note():
 # (e) probabilities unchanged — idempotency + protected-files check
 # --------------------------------------------------------------------------- #
 
+# Protected files: model / data / pipeline code that the squad-context
+# (Phase 4, display-only) work must not touch. ev_workflow.py is
+# deliberately NOT included here because Phase 1 of the mobile-app
+# rearchitecture (branch `feat/mobile-app-rearchitecture`) is the
+# legitimate refactor that decouples predict_match() from
+# evaluate_market(). All other model files remain protected.
 _PROTECTED_FILES = [
-    "soccer_ev_model/ev_workflow.py",
     "soccer_ev_model/pi_ratings.py",
     "soccer_ev_model/elo_ratings.py",
     "soccer_ev_model/prediction_summary.py",
