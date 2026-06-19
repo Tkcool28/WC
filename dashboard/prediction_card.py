@@ -163,7 +163,7 @@ def _confidence_label(prediction: dict) -> tuple[str, str]:
 
     if tier == "A" and agreement == "agree":
         return "High Confidence", "high"
-    if tier == "A" and agreement in ("fragile", "only_pi", "only_elo", ""):
+    if tier == "A" and agreement in ("fragile", "only_pi", "only_elo", "disagree", ""):
         return "Moderate Confidence", "moderate"
     if tier == "B" and agreement == "disagree":
         return "Low Confidence", "low"
