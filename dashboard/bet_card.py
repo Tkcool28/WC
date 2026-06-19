@@ -233,9 +233,13 @@ def render_bet_card(
     # ---- (2) Most Likely Result (model's pick, NOT the value) ---- #
     mlr_key = _extract_most_likely(prediction)
     mlr_text = _outcome_headline_text(mlr_key, prediction)
-    p_top = (
-        (prediction.get("primary_probs") or prediction.get("blend_probs") or prediction.get("pi_probs") or {}).get(mlr_key)
-    )
+    # primary_probs is the canonical official prediction (Phase 4+5).
+    _probs = prediction.get("primary_probs") or prediction.get("blend_probs") or prediction.get("pi_probs") or {}
+    p_top = _probs.get(mlr_key)
+    # Surface a subtle note when the goal model was expected but could
+    # not be loaded — the user is seeing Elo-only or pi-only predictions.
+    if prediction.get("_goal_model_expected") and not prediction.get("_goal_model_used"):
+        st.caption("⚠️ Goal model unavailable — using Elo-only blend.")
     st.markdown("**Most Likely Result**")
     headline_html = (
         mlr_text

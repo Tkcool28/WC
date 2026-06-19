@@ -1031,7 +1031,7 @@ def _render_analysis_tab(
     with st.expander("Model Breakdown", expanded=False):
         _render_section_table(_ux_analysis_model(result))
         # Keep the original Pi / Elo / Blend probability table
-        blended = result.get("blend_probs", result["pi_probs"])
+        blended = result.get("primary_probs", result.get("blend_probs", result["pi_probs"]))
         pi_only = result.get("pi_only_probs") or blended
         elo_only = result.get("elo_only_probs")
         rows = []
@@ -2497,9 +2497,8 @@ def _render_custom_bet_expander(
         )
         mlr_key = _extract_most_likely(prediction)
         mlr_text = _outcome_headline_text(mlr_key, prediction)
-        p_top = (
-            (prediction.get("primary_probs") or prediction.get("blend_probs") or prediction.get("pi_probs") or {}).get(mlr_key)
-        )
+        _probs = prediction.get("primary_probs") or prediction.get("blend_probs") or prediction.get("pi_probs") or {}
+        p_top = _probs.get(mlr_key)
         st.markdown("**Most Likely Result**")
         headline_html = (
             mlr_text

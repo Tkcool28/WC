@@ -470,3 +470,174 @@ def test_no_untracked_model_math_files_changed() -> None:
     assert res.stdout.strip() == "", (
         f"Model-math files changed in Phase 4:\n{res.stdout}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Phase 6: primary_probs integration in Bets tab
+# --------------------------------------------------------------------------- #
+# A prediction dict that mirrors what Phase 5 predict_match actually
+# returns: primary_probs is the Elo60/Goal40 blend, pi_probs is the
+# pure pi-rating, and the two are different so we can tell which one
+# the card used.
+_PHASE6_PREDICTION = {
+    "home_team": "Argentina",
+    "away_team": "Brazil",
+    "home_team_id": 1,
+    "away_team_id": 2,
+    "date": "2026-06-17",
+    # primary_probs: the official Elo60/Goal40 blend (different from pi)
+    "primary_probs": {"home": 0.60, "draw": 0.25, "away": 0.15},
+    # pi_probs: pure pi-rating (different so we can detect leaks)
+    "pi_probs": {"home": 0.55, "draw": 0.27, "away": 0.18},
+    "blend_probs": {"home": 0.55, "draw": 0.27, "away": 0.18},
+    "pi_only_probs": {"home": 0.55, "draw": 0.27, "away": 0.18},
+    "elo_only_probs": {"home": 0.58, "draw": 0.26, "away": 0.16},
+    "blend_was_used": True,
+    "_goal_model_used": True,
+    "_goal_model_expected": True,
+    "_goal_model_low_data": False,
+    "confidence": {
+        "tier": "A",
+        "calibrated_p": 0.58,
+        "warnings": [],
+    },
+    "banner": "OK",
+    "canonical_home_id": "ARG",
+    "canonical_away_id": "BRA",
+    "identity_warnings": [],
+}
+
+_DEGRADED_PREDICTION = {
+    "home_team": "Argentina",
+    "away_team": "Brazil",
+    "home_team_id": 1,
+    "away_team_id": 2,
+    "date": "2026-06-17",
+    "primary_probs": {"home": 0.58, "draw": 0.26, "away": 0.16},
+    "pi_probs": {"home": 0.55, "draw": 0.27, "away": 0.18},
+    "blend_probs": {"home": 0.55, "draw": 0.27, "away": 0.18},
+    "pi_only_probs": {"home": 0.55, "draw": 0.27, "away": 0.18},
+    "elo_only_probs": {"home": 0.58, "draw": 0.26, "away": 0.16},
+    "blend_was_used": True,
+    "_goal_model_used": False,          # goal model NOT loaded
+    "_goal_model_expected": True,       # but it WAS expected
+    "_goal_model_low_data": False,
+    "confidence": {
+        "tier": "B",
+        "calibrated_p": 0.55,
+        "warnings": [],
+    },
+    "banner": "OK",
+    "canonical_home_id": "ARG",
+    "canonical_away_id": "BRA",
+    "identity_warnings": [],
+}
+
+_PHASE6_CARD_SCRIPT = f"""
+import streamlit as st
+from dashboard.bet_card import render_bet_card
+
+prediction = {_PHASE6_PREDICTION!r}
+meta = {{
+    "group": "GROUP_A",
+    "stage": "GROUP_STAGE",
+    "matchday": 1,
+    "kickoff_iso": "2026-06-17T17:00:00Z",
+}}
+render_bet_card(meta, prediction, key_prefix="phase6_card")
+"""
+
+_DEGRADED_CARD_SCRIPT = f"""
+import streamlit as st
+from dashboard.bet_card import render_bet_card
+
+prediction = {_DEGRADED_PREDICTION!r}
+meta = {{
+    "group": "GROUP_A",
+    "stage": "GROUP_STAGE",
+    "matchday": 1,
+    "kickoff_iso": "2026-06-17T17:00:00Z",
+}}
+render_bet_card(meta, prediction, key_prefix="degraded_card")
+"""
+
+
+class TestPhase6PrimaryProbsIntegration:
+    """Phase 6: Bets tab uses primary_probs, not pi_probs."""
+
+    def test_bet_card_uses_primary_probs_not_pi_probs(self) -> None:
+        """The Most Likely Result probability must come from
+        primary_probs, not pi_probs. The two are intentionally
+        different in _PHASE6_PREDICTION, so we can assert the card
+        shows the primary_probs value (60% for home)."""
+        at = AppTest.from_string(_PHASE6_CARD_SCRIPT, default_timeout=30)
+        at.run()
+        assert not at.exception, f"app raised: {at.exception}"
+        # The probability is shown via st.caption, not st.markdown.
+        captions = "\n".join((c.value or "") for c in at.caption)
+        # primary_probs home = 0.60, pi_probs home = 0.55
+        # The card should show the primary_probs value.
+        assert "60.0%" in captions, (
+            f"Expected primary_probs home (60%) in captions, got:\n{captions}"
+        )
+
+    def test_bet_card_does_not_leak_pi_only_into_ev(self) -> None:
+        """evaluate_market must receive primary_probs, not pi_probs.
+        We verify this by checking the card's displayed probability
+        matches primary_probs, not pi_probs."""
+        at = AppTest.from_string(_PHASE6_CARD_SCRIPT, default_timeout=30)
+        at.run()
+        assert not at.exception
+        # The model probability caption should reference primary_probs
+        # home (0.60), not pi_probs home (0.55).
+        captions = "\n".join((c.value or "") for c in at.caption)
+        assert "60.0%" in captions, (
+            f"Expected primary_probs (60%) in captions, got:\n{captions}"
+        )
+
+    def test_bet_card_shows_degraded_warning_when_goal_model_missing(self) -> None:
+        """When _goal_model_expected is True but _goal_model_used is
+        False, the card should surface a warning that the goal model
+        is unavailable."""
+        at = AppTest.from_string(_DEGRADED_CARD_SCRIPT, default_timeout=30)
+        at.run()
+        assert not at.exception, f"app raised: {at.exception}"
+        text = "\n".join((m.value or "") for m in at.markdown)
+        # The warning should appear as a caption (st.caption).
+        captions = "\n".join((c.value or "") for c in at.caption)
+        assert "Goal model unavailable" in captions, (
+            f"Expected degraded warning in captions, got:\n{captions}"
+        )
+
+    def test_bet_card_no_degraded_warning_when_goal_model_used(self) -> None:
+        """When the goal model IS used, no degraded warning should
+        appear."""
+        at = AppTest.from_string(_PHASE6_CARD_SCRIPT, default_timeout=30)
+        at.run()
+        assert not at.exception
+        captions = "\n".join((c.value or "") for c in at.caption)
+        assert "Goal model unavailable" not in captions, (
+            "Degraded warning should NOT appear when goal model is used"
+        )
+
+    def test_bet_card_no_degraded_warning_when_goal_model_not_expected(self) -> None:
+        """When the goal model was never expected (e.g. no predictor
+        configured), no warning should appear."""
+        pred = dict(_PHASE6_PREDICTION)
+        pred["_goal_model_expected"] = False
+        pred["_goal_model_used"] = False
+        script = f"""
+import streamlit as st
+from dashboard.bet_card import render_bet_card
+
+prediction = {pred!r}
+meta = {{"group": "GROUP_A", "stage": "GROUP_STAGE", "matchday": 1, "kickoff_iso": "2026-06-17T17:00:00Z"}}
+render_bet_card(meta, prediction, key_prefix="no_expect_card")
+"""
+        at = AppTest.from_string(script, default_timeout=30)
+        at.run()
+        assert not at.exception
+        captions = "\n".join((c.value or "") for c in at.caption)
+        assert "Goal model unavailable" not in captions, (
+            "Degraded warning should NOT appear when goal model was never expected"
+        )
