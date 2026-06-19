@@ -208,12 +208,14 @@ class TestPredictionWhyTextGoalModel:
         blend_was_used=False,
         tier="B",
         agreement="agree",
+        home_team="England",
+        away_team="Croatia",
     ):
         pi_probs = pi_probs or {"home": 0.45, "draw": 0.25, "away": 0.30}
         primary_probs = primary_probs or dict(pi_probs)
         return {
-            "home_team": "England",
-            "away_team": "Croatia",
+            "home_team": home_team,
+            "away_team": away_team,
             "primary_probs": primary_probs,
             "pi_probs": pi_probs,
             "blend_probs": dict(pi_probs),
@@ -269,10 +271,10 @@ class TestPredictionWhyTextGoalModel:
         text = prediction_why_text(result, warnings=[], identity_warnings=[])
         assert "Elo and the goal model both favor a draw" in text
 
-    def test_goal_model_xg_returns_expected_goals(self) -> None:
-        """When goal model ran with xG, why text mentions expected goals."""
+    def test_goal_model_xg_returns_human_readable_text(self) -> None:
+        """When goal model ran with xG, why text is human-readable with team names and rounded xG."""
         # No Elo available (only_pi), so the "both favor" branch doesn't fire.
-        # The xG branch (step 2c) fires instead.
+        # The xG branch fires instead.
         result = self._make_result(
             goal_model_used=True,
             goal_model_xg={"home_xg": 1.8, "away_xg": 0.9},
@@ -282,7 +284,52 @@ class TestPredictionWhyTextGoalModel:
             agreement="only_pi",
         )
         text = prediction_why_text(result, warnings=[], identity_warnings=[])
-        assert "Goal model projects 1.8-0.9 expected goals" in text
+        # Must mention both team names, rounded xG, and the predicted team first
+        assert "Goal model projects England ahead on expected goals" in text
+        assert "England 1.80 xG" in text
+        assert "Croatia 0.90 xG" in text
+        # No raw float strings
+        assert "0.804" not in text and "1.8-0.9" not in text
+
+    def test_goal_model_xg_rounded_to_two_decimals(self) -> None:
+        """Why text rounds xG to 2 decimal places, no raw floats."""
+        result = self._make_result(
+            home_team="Scotland",
+            away_team="Morocco",
+            goal_model_used=True,
+            goal_model_xg={"home_xg": 0.8041770644035219, "away_xg": 1.305195532461069},
+            elo_only_probs=None,
+            blend_was_used=False,
+            tier="B",
+            agreement="only_pi",
+        )
+        text = prediction_why_text(result, warnings=[], identity_warnings=[])
+        # home_xg = 0.80, away_xg = 1.31 — away team predicted (higher xG)
+        assert "Goal model projects Morocco ahead on expected goals" in text
+        assert "Morocco" in text
+        assert "Scotland" in text
+        assert "1.31 xG" in text
+        assert "0.80 xG" in text
+        # No raw float strings
+        assert "0.8041770644035219" not in text
+        assert "1.305195532461069" not in text
+
+    def test_goal_model_xg_away_predicted_first(self) -> None:
+        """When away team has higher xG, predicted (away) team appears first in the text."""
+        result = self._make_result(
+            home_team="Brazil",
+            away_team="Haiti",
+            goal_model_used=True,
+            goal_model_xg={"home_xg": 0.62, "away_xg": 1.85},
+            elo_only_probs=None,
+            blend_was_used=False,
+            tier="B",
+            agreement="only_pi",
+        )
+        text = prediction_why_text(result, warnings=[], identity_warnings=[])
+        # away_xg (Haiti 1.85) > home_xg (Brazil 0.62) — predicted team is Haiti
+        assert "Goal model projects Haiti ahead on expected goals" in text
+        assert "Haiti 1.85 xG vs Brazil 0.62 xG" in text
 
     def test_elo_only_fallback_returns_fallback_text(self) -> None:
         """When goal model expected but not used and Elo was, why text mentions fallback."""

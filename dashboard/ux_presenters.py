@@ -213,8 +213,19 @@ def prediction_why_text(
 
         if result.get("_goal_model_xg"):
             xg = result["_goal_model_xg"]
+            home_name = result.get("home_team", "Home")
+            away_name = result.get("away_team", "Away")
+            home_xg = xg["home_xg"]
+            away_xg = xg["away_xg"]
+            if home_xg >= away_xg:
+                predicted_name, other_name = home_name, away_name
+                predicted_xg, other_xg = home_xg, away_xg
+            else:
+                predicted_name, other_name = away_name, home_name
+                predicted_xg, other_xg = away_xg, home_xg
             return (
-                f"Goal model projects {xg['home_xg']}-{xg['away_xg']} expected goals."
+                f"Goal model projects {predicted_name} ahead on expected goals: "
+                f"{predicted_name} {predicted_xg:.2f} xG vs {other_name} {other_xg:.2f} xG."
             )
 
     # --- 1c. Elo-only fallback (goal model expected but unavailable) ---
