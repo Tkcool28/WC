@@ -236,6 +236,21 @@ def test_bet_card_emits_most_likely_result() -> None:
     assert "Argentina to Win" in text
 
 
+def test_bet_card_headline_has_no_hardcoded_dark_color() -> None:
+    """Winner headline uses the theme's default text color (no hardcoded #1a1a1a)."""
+    at = _boot_card_app()
+    assert not at.exception
+    text = "\n".join((m.value or "") for m in at.markdown)
+    # The old inline color:#1a1a1a was near-black and invisible in dark mode.
+    # The fix removes it so Streamlit's theme color is used instead.
+    assert "color:#1a1a1a" not in text, (
+        "Hardcoded dark color in winner headline would be invisible in dark mode"
+    )
+    # The headline should still have the wc-mlr-headline class + font styling
+    assert "wc-mlr-headline" in text
+    assert "font-size:1.3em" in text
+
+
 def test_bet_card_stylesheet_classes_are_emitted() -> None:
     """The Phase 4 CSS classes appear in the injected stylesheet."""
     at = AppTest.from_file(str(_DASHBOARD_APP), default_timeout=60)

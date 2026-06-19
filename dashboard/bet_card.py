@@ -249,8 +249,7 @@ def render_bet_card(
     )
     st.markdown(
         f"<div class='wc-mlr-headline' "
-        f"style='font-size:1.3em; font-weight:600; line-height:1.2; "
-        f"color:#1a1a1a;'>"
+        f"style='font-size:1.3em; font-weight:600; line-height:1.2;'>"
         f"{headline_html}</div>",
         unsafe_allow_html=True,
     )

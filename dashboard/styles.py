@@ -116,6 +116,14 @@ _CSS = """
   font-family: inherit;
 }
 
+/* Dark mode: the headline must inherit the theme's text colour instead
+   of falling back to the removed inline ``color:#1a1a1a``. */
+@media (prefers-color-scheme: dark) {
+  .wc-mlr-headline {
+    color: var(--text-color, #fafafa);
+  }
+}
+
 /* "Best Value" green block. The inline style sets the colour; this
    rule only guards the surrounding margins. */
 .wc-best-value {
