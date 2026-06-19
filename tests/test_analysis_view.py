@@ -238,8 +238,8 @@ def test_render_analysis_view_with_market_shows_market_data() -> None:
     )
 
 
-def test_render_analysis_view_prediction_details_default_open() -> None:
-    """Only the 'Prediction Details' expander should have expanded=True."""
+def test_render_analysis_view_primary_model_default_open() -> None:
+    """Only the 'Primary Model' expander should have expanded=True."""
     pred = _fake_prediction()
     matches = _fake_matches()
     at = AppTest.from_string(
@@ -261,21 +261,21 @@ def test_render_analysis_view_prediction_details_default_open() -> None:
     assert len(expanders) >= 5, (
         f"Expected many expanders; got: {[e.label for e in expanders]!r}"
     )
-    # Find Prediction Details — should be expanded.
-    prediction_details = [
-        e for e in expanders if "Prediction Details" in (e.label or "")
+    # Find Primary Model — should be expanded.
+    primary_model = [
+        e for e in expanders if "Primary Model" in (e.label or "")
     ]
-    assert len(prediction_details) == 1, (
-        f"Expected exactly one 'Prediction Details' expander; got: "
-        f"{[e.label for e in prediction_details]!r}"
+    assert len(primary_model) == 1, (
+        f"Expected exactly one 'Primary Model' expander; got: "
+        f"{[e.label for e in primary_model]!r}"
     )
     # AppTest exposes `expanded` via the proto for Expander.
-    assert prediction_details[0].proto.expanded is True, (
-        "Prediction Details must be expanded by default"
+    assert primary_model[0].proto.expanded is True, (
+        "Primary Model must be expanded by default"
     )
     # All other expanders should be collapsed.
     for e in expanders:
-        if "Prediction Details" in (e.label or ""):
+        if "Primary Model" in (e.label or ""):
             continue
         assert e.proto.expanded is False, (
             f"Expander '{e.label}' should be collapsed by default, "
@@ -448,3 +448,433 @@ def test_analysis_view_does_not_require_market_data() -> None:
     )
     at.run()
     assert not at.exception, f"analysis view raised with no market: {at.exception}"
+
+
+# --------------------------------------------------------------------------- #
+# Phase 7: New section tests
+# --------------------------------------------------------------------------- #
+def _fake_prediction_with_goal_model() -> dict:
+    """A prediction that includes goal model output (full blend ran)."""
+    pred = _fake_prediction()
+    pred["primary_probs"] = {"home": 0.55, "draw": 0.23, "away": 0.22}
+    pred["_goal_model_used"] = True
+    pred["_goal_model_expected"] = True
+    pred["_goal_model_xg"] = {"home_xg": 1.8, "away_xg": 1.1}
+    pred["_goal_model_most_likely_score"] = [2, 1]
+    pred["_goal_model_expected_total_goals"] = 2.9
+    pred["_goal_model_low_data"] = False
+    pred["_goal_model_version"] = "v2.1"
+    pred["_goal_model_data_cutoff"] = "2026-05-01"
+    pred["_goal_model_low_data_flags"] = []
+    pred["goal_model_hda"] = {"home": 0.58, "draw": 0.20, "away": 0.22}
+    pred["home_elo"] = 1850.0
+    pred["away_elo"] = 1720.0
+    return pred
+
+
+def _fake_prediction_goal_expected_but_failed() -> dict:
+    """A prediction where goal model was expected but failed at runtime."""
+    pred = _fake_prediction()
+    pred["_goal_model_used"] = False
+    pred["_goal_model_expected"] = True
+    pred["_goal_model_xg"] = None
+    pred["_goal_model_low_data"] = False
+    pred["goal_model_hda"] = None
+    return pred
+
+
+def _fake_prediction_no_goal_model() -> dict:
+    """A prediction where goal model was never loaded."""
+    pred = _fake_prediction()
+    pred["_goal_model_used"] = False
+    pred["_goal_model_expected"] = False
+    pred["goal_model_hda"] = None
+    return pred
+
+
+def test_primary_model_section_shows_blend_formula() -> None:
+    """The Primary Model expander shows the 60/40 blend formula."""
+    pred = _fake_prediction_with_goal_model()
+    matches = _fake_matches()
+    at = AppTest.from_string(
+        "import streamlit as st\n"
+        "from dashboard.analysis_view import render_analysis_view\n"
+        "import json as _j\n"
+        f"pred = _j.loads({json.dumps(json.dumps(pred))})\n"
+        f"matches = _j.loads({json.dumps(json.dumps(matches))})\n"
+        "render_analysis_view(\n"
+        "    matches_for_date=matches,\n"
+        "    predictions_by_match={'M1': pred},\n"
+        "    market_by_match={},\n"
+        "    name_to_id={},\n"
+        ")\n"
+    )
+    at.run()
+    assert not at.exception
+    full_text = " ".join(
+        [(m.value or "") for m in at.markdown]
+    )
+    assert "0.60" in full_text or "60%" in full_text, (
+        "Primary Model section must document the 60/40 blend weights"
+    )
+
+
+def test_primary_model_shows_fallback_when_goal_failed() -> None:
+    """When goal model was expected but failed, the primary model shows fallback."""
+    pred = _fake_prediction_goal_expected_but_failed()
+    matches = _fake_matches()
+    at = AppTest.from_string(
+        "import streamlit as st\n"
+        "from dashboard.analysis_view import render_analysis_view\n"
+        "import json as _j\n"
+        f"pred = _j.loads({json.dumps(json.dumps(pred))})\n"
+        f"matches = _j.loads({json.dumps(json.dumps(matches))})\n"
+        "render_analysis_view(\n"
+        "    matches_for_date=matches,\n"
+        "    predictions_by_match={'M1': pred},\n"
+        "    market_by_match={},\n"
+        "    name_to_id={},\n"
+        ")\n"
+    )
+    at.run()
+    assert not at.exception
+    # Open the Primary Model expander (default open but AppTest needs explicit).
+    primary_exp = next(
+        (e for e in at.expander if "Primary Model" in (e.label or "")),
+        None,
+    )
+    assert primary_exp is not None, "Primary Model expander missing"
+    primary_exp.proto.expanded = True
+    at.run()
+    full_text = " ".join(
+        [(m.value or "") for m in at.markdown] +
+        [(i.value or "") for i in at.info] +
+        [(w.value or "") for w in at.warning]
+    )
+    assert "fallback" in full_text.lower() or "fell back" in full_text.lower(), (
+        "Primary Model must indicate fallback when goal model failed"
+    )
+
+
+def test_elo_section_shows_rating_difference() -> None:
+    """The Elo section shows the rating difference when both ratings available."""
+    pred = _fake_prediction_with_goal_model()
+    matches = _fake_matches()
+    at = AppTest.from_string(
+        "import streamlit as st\n"
+        "from dashboard.analysis_view import render_analysis_view\n"
+        "import json as _j\n"
+        f"pred = _j.loads({json.dumps(json.dumps(pred))})\n"
+        f"matches = _j.loads({json.dumps(json.dumps(matches))})\n"
+        "render_analysis_view(\n"
+        "    matches_for_date=matches,\n"
+        "    predictions_by_match={'M1': pred},\n"
+        "    market_by_match={},\n"
+        "    name_to_id={},\n"
+        ")\n"
+    )
+    at.run()
+    assert not at.exception
+    # Open the Elo expander.
+    elo_exp = next(
+        (e for e in at.expander if "Elo" in (e.label or "")),
+        None,
+    )
+    assert elo_exp is not None, "Elo expander missing"
+    elo_exp.proto.expanded = True
+    at.run()
+    full_text = " ".join(
+        [(m.value or "") for m in at.markdown]
+    )
+    assert "130" in full_text, (
+        "Elo section should show rating difference (1850-1720=130)"
+    )
+
+
+def test_elo_section_shows_unavailable_when_missing() -> None:
+    """The Elo section shows 'No Elo diagnostics' when Elo is missing."""
+    pred = _fake_prediction_no_goal_model()
+    pred["elo_only_probs"] = None
+    pred["blend_was_used"] = False
+    matches = _fake_matches()
+    at = AppTest.from_string(
+        "import streamlit as st\n"
+        "from dashboard.analysis_view import render_analysis_view\n"
+        "import json as _j\n"
+        f"pred = _j.loads({json.dumps(json.dumps(pred))})\n"
+        f"matches = _j.loads({json.dumps(json.dumps(matches))})\n"
+        "render_analysis_view(\n"
+        "    matches_for_date=matches,\n"
+        "    predictions_by_match={'M1': pred},\n"
+        "    market_by_match={},\n"
+        "    name_to_id={},\n"
+        ")\n"
+    )
+    at.run()
+    assert not at.exception
+    elo_exp = next(
+        (e for e in at.expander if "Elo" in (e.label or "")),
+        None,
+    )
+    assert elo_exp is not None, "Elo expander missing"
+    elo_exp.proto.expanded = True
+    at.run()
+    full_text = " ".join(
+        [(m.value or "") for m in at.markdown] +
+        [(i.value or "") for i in at.info] +
+        [(w.value or "") for w in at.warning] +
+        [(c.value or "") for c in at.caption]
+    )
+    assert "No Elo" in full_text or "not used" in full_text.lower() or "not available" in full_text.lower(), (
+        "Elo section should indicate unavailability"
+    )
+
+
+def test_goal_model_section_shows_xg_and_scoreline() -> None:
+    """The Goal Model section shows xG and most-likely scoreline."""
+    pred = _fake_prediction_with_goal_model()
+    matches = _fake_matches()
+    at = AppTest.from_string(
+        "import streamlit as st\n"
+        "from dashboard.analysis_view import render_analysis_view\n"
+        "import json as _j\n"
+        f"pred = _j.loads({json.dumps(json.dumps(pred))})\n"
+        f"matches = _j.loads({json.dumps(json.dumps(matches))})\n"
+        "render_analysis_view(\n"
+        "    matches_for_date=matches,\n"
+        "    predictions_by_match={'M1': pred},\n"
+        "    market_by_match={},\n"
+        "    name_to_id={},\n"
+        ")\n"
+    )
+    at.run()
+    assert not at.exception
+    # Open the Goal Model expander.
+    goal_exp = next(
+        (e for e in at.expander if "Goal Model" in (e.label or "")),
+        None,
+    )
+    assert goal_exp is not None, "Goal Model expander missing"
+    goal_exp.proto.expanded = True
+    at.run()
+    full_text = " ".join(
+        [(m.value or "") for m in at.markdown]
+    )
+    assert "1.8" in full_text, "Goal Model should show home xG"
+    assert "1.1" in full_text, "Goal Model should show away xG"
+    assert "2-1" in full_text or "2 – 1" in full_text, (
+        "Goal Model should show most-likely scoreline 2-1"
+    )
+
+
+def test_goal_model_section_shows_artifact_version() -> None:
+    """The Goal Model section shows model version and data cutoff."""
+    pred = _fake_prediction_with_goal_model()
+    matches = _fake_matches()
+    at = AppTest.from_string(
+        "import streamlit as st\n"
+        "from dashboard.analysis_view import render_analysis_view\n"
+        "import json as _j\n"
+        f"pred = _j.loads({json.dumps(json.dumps(pred))})\n"
+        f"matches = _j.loads({json.dumps(json.dumps(matches))})\n"
+        "render_analysis_view(\n"
+        "    matches_for_date=matches,\n"
+        "    predictions_by_match={'M1': pred},\n"
+        "    market_by_match={},\n"
+        "    name_to_id={},\n"
+        ")\n"
+    )
+    at.run()
+    assert not at.exception
+    goal_exp = next(
+        (e for e in at.expander if "Goal Model" in (e.label or "")),
+        None,
+    )
+    assert goal_exp is not None
+    goal_exp.proto.expanded = True
+    at.run()
+    full_text = " ".join(
+        [(m.value or "") for m in at.markdown] +
+        [(c.value or "") for c in at.caption]
+    )
+    assert "v2.1" in full_text, "Goal Model should show model_version"
+    assert "2026-05-01" in full_text, "Goal Model should show data_cutoff"
+
+
+def test_goal_model_section_shows_not_loaded() -> None:
+    """The Goal Model section shows 'not loaded' when goal model was never loaded."""
+    pred = _fake_prediction_no_goal_model()
+    matches = _fake_matches()
+    at = AppTest.from_string(
+        "import streamlit as st\n"
+        "from dashboard.analysis_view import render_analysis_view\n"
+        "import json as _j\n"
+        f"pred = _j.loads({json.dumps(json.dumps(pred))})\n"
+        f"matches = _j.loads({json.dumps(json.dumps(matches))})\n"
+        "render_analysis_view(\n"
+        "    matches_for_date=matches,\n"
+        "    predictions_by_match={'M1': pred},\n"
+        "    market_by_match={},\n"
+        "    name_to_id={},\n"
+        ")\n"
+    )
+    at.run()
+    assert not at.exception
+    goal_exp = next(
+        (e for e in at.expander if "Goal Model" in (e.label or "")),
+        None,
+    )
+    assert goal_exp is not None
+    goal_exp.proto.expanded = True
+    at.run()
+    full_text = " ".join(
+        [(m.value or "") for m in at.markdown] +
+        [(i.value or "") for i in at.info]
+    )
+    assert "not loaded" in full_text.lower() or "not available" in full_text.lower(), (
+        "Goal Model should indicate it was not loaded"
+    )
+
+
+def test_pi_section_shows_diagnostic_only_label() -> None:
+    """The Pi section is clearly labelled as diagnostic only, not in primary blend."""
+    pred = _fake_prediction_with_goal_model()
+    matches = _fake_matches()
+    at = AppTest.from_string(
+        "import streamlit as st\n"
+        "from dashboard.analysis_view import render_analysis_view\n"
+        "import json as _j\n"
+        f"pred = _j.loads({json.dumps(json.dumps(pred))})\n"
+        f"matches = _j.loads({json.dumps(json.dumps(matches))})\n"
+        "render_analysis_view(\n"
+        "    matches_for_date=matches,\n"
+        "    predictions_by_match={'M1': pred},\n"
+        "    market_by_match={},\n"
+        "    name_to_id={},\n"
+        ")\n"
+    )
+    at.run()
+    assert not at.exception
+    pi_exp = next(
+        (e for e in at.expander if "Pi" in (e.label or "")),
+        None,
+    )
+    assert pi_exp is not None, "Pi expander missing"
+    pi_exp.proto.expanded = True
+    at.run()
+    full_text = " ".join(
+        [(m.value or "") for m in at.markdown] +
+        [(c.value or "") for c in at.caption]
+    )
+    assert "diagnostic" in full_text.lower(), (
+        "Pi section must be labelled as diagnostic only"
+    )
+
+
+def test_disagreement_section_shows_agreement_status() -> None:
+    """The Disagreement section shows whether models agree on top outcome."""
+    pred = _fake_prediction_with_goal_model()
+    matches = _fake_matches()
+    at = AppTest.from_string(
+        "import streamlit as st\n"
+        "from dashboard.analysis_view import render_analysis_view\n"
+        "import json as _j\n"
+        f"pred = _j.loads({json.dumps(json.dumps(pred))})\n"
+        f"matches = _j.loads({json.dumps(json.dumps(matches))})\n"
+        "render_analysis_view(\n"
+        "    matches_for_date=matches,\n"
+        "    predictions_by_match={'M1': pred},\n"
+        "    market_by_match={},\n"
+        "    name_to_id={},\n"
+        ")\n"
+    )
+    at.run()
+    assert not at.exception
+    disc_exp = next(
+        (e for e in at.expander if "Disagreement" in (e.label or "")),
+        None,
+    )
+    assert disc_exp is not None, "Disagreement expander missing"
+    disc_exp.proto.expanded = True
+    at.run()
+    full_text = " ".join(
+        [(m.value or "") for m in at.markdown] +
+        [(i.value or "") for i in at.info]
+    )
+    assert "agree" in full_text.lower() or "disagree" in full_text.lower(), (
+        "Disagreement section must mention agreement status"
+    )
+
+
+def test_disagreement_section_shows_largest_gap() -> None:
+    """The Disagreement section shows the largest probability gap."""
+    pred = _fake_prediction_with_goal_model()
+    matches = _fake_matches()
+    at = AppTest.from_string(
+        "import streamlit as st\n"
+        "from dashboard.analysis_view import render_analysis_view\n"
+        "import json as _j\n"
+        f"pred = _j.loads({json.dumps(json.dumps(pred))})\n"
+        f"matches = _j.loads({json.dumps(json.dumps(matches))})\n"
+        "render_analysis_view(\n"
+        "    matches_for_date=matches,\n"
+        "    predictions_by_match={'M1': pred},\n"
+        "    market_by_match={},\n"
+        "    name_to_id={},\n"
+        ")\n"
+    )
+    at.run()
+    assert not at.exception
+    disc_exp = next(
+        (e for e in at.expander if "Disagreement" in (e.label or "")),
+        None,
+    )
+    assert disc_exp is not None
+    disc_exp.proto.expanded = True
+    at.run()
+    full_text = " ".join(
+        [(m.value or "") for m in at.markdown]
+    )
+    assert "gap" in full_text.lower() or "pts" in full_text.lower(), (
+        "Disagreement section must show the largest gap in points"
+    )
+
+
+def test_disagreement_shows_warning_on_strong_disagreement() -> None:
+    """When models strongly disagree, a warning is emitted."""
+    pred = _fake_prediction_with_goal_model()
+    # Make Pi strongly disagree with Elo+Goal
+    pred["pi_only_probs"] = {"home": 0.1, "draw": 0.1, "away": 0.8}
+    pred["elo_only_probs"] = {"home": 0.7, "draw": 0.2, "away": 0.1}
+    pred["goal_model_hda"] = {"home": 0.65, "draw": 0.2, "away": 0.15}
+    pred["primary_probs"] = {"home": 0.67, "draw": 0.2, "away": 0.13}
+    matches = _fake_matches()
+    at = AppTest.from_string(
+        "import streamlit as st\n"
+        "from dashboard.analysis_view import render_analysis_view\n"
+        "import json as _j\n"
+        f"pred = _j.loads({json.dumps(json.dumps(pred))})\n"
+        f"matches = _j.loads({json.dumps(json.dumps(matches))})\n"
+        "render_analysis_view(\n"
+        "    matches_for_date=matches,\n"
+        "    predictions_by_match={'M1': pred},\n"
+        "    market_by_match={},\n"
+        "    name_to_id={},\n"
+        ")\n"
+    )
+    at.run()
+    assert not at.exception
+    disc_exp = next(
+        (e for e in at.expander if "Disagreement" in (e.label or "")),
+        None,
+    )
+    assert disc_exp is not None
+    disc_exp.proto.expanded = True
+    at.run()
+    full_text = " ".join(
+        [(m.value or "") for m in at.markdown] +
+        [(w.value or "") for w in at.warning]
+    )
+    assert "strong" in full_text.lower() or "caution" in full_text.lower() or "warning" in full_text.lower(), (
+        "Strong disagreement should trigger a warning"
+    )

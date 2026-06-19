@@ -1,51 +1,31 @@
 """Renders the Analysis view (technical deep-dive per game).
 
-Phase 5 of the dashboard rearchitecture replaces the Phase 2 stub with a
-real, mobile-first, technical Analysis experience:
+Phase 7 of the dashboard rearchitecture reorganizes the Analysis view
+into five transparent model sections plus supplementary technical context:
 
-* Pick a date (driven by :data:`KEYS.SELECTED_DATE`).
-* Pick a game (compact matchup picker).
-* See 11 sections of technical detail — Prediction Details opens by
-  default, the other 10 are collapsed.
+1.  **Primary Model** *(default OPEN)* — the official 60% Elo / 40% Goal
+    blend, the selected outcome, the confidence tier, and which fallback
+    source was used (or whether the full blend ran).
+2.  **Elo** — Elo-only H/D/A probabilities, the rating difference, and
+    availability flags for both teams.
+3.  **Goal Model** — Goal-only H/D/A, home/away xG, expected total goals,
+    most-likely scoreline, low-data flags, and the artifact cutoff/version.
+4.  **Pi** — Pi-only H/D/A, diagnostic only, clearly labelled as NOT
+    part of the primary blend.
+5.  **Disagreement** — whether all three component models agree on the
+    top outcome, the largest probability gap between any two models on
+    the same market, and a concise warning when disagreement is strong.
+
+After the model sections, the remaining technical sections (Market
+Comparison, Poisson View, Squad Context, Group Context, Calibration and
+Data Quality, Raw Diagnostics) are preserved as collapsed expanders.
 
 The view works with **model-only** predictions (no odds required).  When
 the user has run the same game through the Bets view, the
 ``KEYS.MARKET_BY_MATCH`` cache contains an ``evaluate_market(...)`` result
 that the **Market Comparison** section will surface; otherwise the
-section shows a calm message — never a hard error — so the rest of the
-view remains useful for technical users who only care about the model
-output.
-
-Sections (in order):
-
-1.  **Prediction Details** *(default OPEN)* — model's pick, the full
-    1X2 probability table, confidence tier, calibrated_p, and the
-    confidence warnings list.
-2.  **Model Breakdown** — pi-only / elo-only / blend probabilities and
-    the model-agreement status (the ``agreement_status`` helper).
-3.  **π Pi-Rating** — raw pi-rating diagnostics stored on the prediction.
-4.  **📊 Elo Rating** — raw Elo diagnostics stored on the prediction.
-5.  **⚖️ Blend** — the blend formula, the per-model weights used, and
-    whether the blend actually ran (``blend_was_used``).
-6.  **💹 Market Comparison** — *conditional*.  Only renders real data
-    when ``market_by_match`` is populated; otherwise shows
-    "Enter sportsbook odds in Bets to unlock market comparison."
-7.  **🥅 Poisson View** — expected-goals estimate, independent
-    Poisson 1X2 from the score matrix, and the Poisson vs Pi
-    agreement label.
-8.  **👥 Squad Context** — manual squad context from
-    :func:`dashboard.context_loader.get_match_context` (Phase 4).
-9.  **🏆 Group Context** — matchday label, group context warnings.
-10. **📐 Calibration and Data Quality** — confidence assessment + raw
-    identity warnings (this is the section the test contract requires
-    to surface the tier letter A/B/C/D).
-11. **🔧 Raw Diagnostics** — canonical team IDs, the full prediction
-    dict, the source-match metadata, and any other raw fields the
-    technical user wants to see.
-
-All sections default to **collapsed** except Prediction Details
-(``expanded=True``).  The selection is persisted across reruns and
-tab changes via :data:`dashboard.session_state.KEYS.ANALYSIS_GAME`.
+section shows a calm message so the rest of the view remains useful for
+technical users who only care about the model output.
 """
 from __future__ import annotations
 
@@ -186,25 +166,25 @@ def render_analysis_view(
         )
         return
 
-    # ---- 1. Prediction Details (default OPEN) ---- #
-    with st.expander("🎯 Prediction Details", expanded=True):
-        _render_prediction_details(prediction)
+    # ---- 1. Primary Model (default OPEN) ---- #
+    with st.expander("🎯 Primary Model (60% Elo / 40% Goal)", expanded=True):
+        _render_primary_model(prediction)
 
-    # ---- 2. Model Breakdown ---- #
-    with st.expander("🧮 Model Breakdown", expanded=False):
-        _render_model_breakdown(prediction)
-
-    # ---- 3. Pi-Rating ---- #
-    with st.expander("π Pi-Rating", expanded=False):
-        _render_pi_section(prediction)
-
-    # ---- 4. Elo Rating ---- #
-    with st.expander("📊 Elo Rating", expanded=False):
+    # ---- 2. Elo ---- #
+    with st.expander("📊 Elo", expanded=False):
         _render_elo_section(prediction)
 
-    # ---- 5. Blend ---- #
-    with st.expander("⚖️ Blend", expanded=False):
-        _render_blend_section(prediction)
+    # ---- 3. Goal Model ---- #
+    with st.expander("⚽ Goal Model", expanded=False):
+        _render_goal_model_section(prediction)
+
+    # ---- 4. Pi ---- #
+    with st.expander("π Pi (diagnostic only)", expanded=False):
+        _render_pi_section(prediction)
+
+    # ---- 5. Disagreement ---- #
+    with st.expander("⚠️ Disagreement", expanded=False):
+        _render_disagreement_section(prediction)
 
     # ---- 6. Market Comparison (only if market data exists) ---- #
     with st.expander("💹 Market Comparison", expanded=False):
@@ -240,17 +220,15 @@ def render_analysis_view(
 
 
 # --------------------------------------------------------------------------- #
-# Section renderers (one per expander above)
+# Section 1: Primary Model
 # --------------------------------------------------------------------------- #
-def _render_prediction_details(prediction: dict) -> None:
-    """Section 1: headline outcome, all three probs, confidence breakdown.
+def _render_primary_model(prediction: dict) -> None:
+    """Show the official blended prediction: 60% Elo / 40% Goal.
 
-    Pure presentation: imports the same pure helpers
-    :func:`dashboard.prediction_card._outcome_headline_text`,
-    :func:`dashboard.prediction_card._confidence_label`,
-    :func:`dashboard.prediction_card._extract_most_likely`, and
-    :func:`dashboard.prediction_card._format_probability`.  No model
-    math, no I/O.
+    Surfaces H/D/A probabilities, the selected outcome, the confidence
+    tier, and which fallback source was used (or whether the full blend
+    ran).  No hidden weights: the 60/40 split is documented in the
+    section header itself.
     """
     from dashboard.prediction_card import (
         _extract_most_likely,
@@ -258,40 +236,63 @@ def _render_prediction_details(prediction: dict) -> None:
         _outcome_headline_text,
     )
 
-    mlr = _extract_most_likely(prediction)
-    headline = _outcome_headline_text(mlr, prediction)
-    probs = (
+    primary = (
         prediction.get("primary_probs")
         or prediction.get("blend_probs")
         or prediction.get("pi_probs")
         or {}
     )
-    p_top = probs.get(mlr) if probs else None
+    mlr = _extract_most_likely(prediction)
+    headline = _outcome_headline_text(mlr, prediction)
+    p_top = primary.get(mlr) if primary else None
 
     st.markdown(f"### {headline}")
     st.caption(f"Top-market probability: {_format_probability(p_top)}")
 
-    # ---- All three probabilities ---- #
-    if probs:
-        st.markdown("**All outcomes:**")
+    # ---- H/D/A probabilities ---- #
+    if primary:
+        st.markdown("**Home / Draw / Away:**")
         for k in ("home", "draw", "away"):
-            v = probs.get(k)
+            v = primary.get(k)
             if v is not None:
                 st.markdown(f"- {k}: {_format_probability(v)}")
 
-    # ---- Confidence breakdown (tier + warnings) ---- #
+    # ---- Blend formula + fallback source ---- #
+    st.markdown("**Blend formula:**")
+    st.markdown("`primary = 0.60 × Elo + 0.40 × Goal Model`")
+
+    _goal_model_used = prediction.get("_goal_model_used", False)
+    _goal_model_expected = prediction.get("_goal_model_expected", False)
+    _elo_used = prediction.get("blend_was_used", False)
+
+    if _goal_model_used:
+        st.caption("Full blend ran: Elo + Goal Model → primary_probs.")
+    elif _goal_model_expected and _elo_used:
+        st.caption(
+            "⚠️ Goal model was expected but failed — fell back to "
+            "Pi+Elo blend. primary_probs does NOT include goal model."
+        )
+    elif _elo_used:
+        st.caption(
+            "Elo-only fallback: goal model unavailable. "
+            "primary_probs = Pi+Elo blend."
+        )
+    else:
+        st.caption(
+            "Pi-only fallback: Elo unavailable. "
+            "primary_probs = Pi-rating only."
+        )
+
+    # ---- Confidence ---- #
     confidence = prediction.get("confidence") or {}
     if confidence:
-        st.markdown("**Confidence:**")
-        for key in (
-            "tier",
-            "tier_description",
-            "calibrated_p",
-            "calib_label",
-            "label",
-        ):
-            if key in confidence:
-                st.markdown(f"- {key}: `{confidence[key]}`")
+        tier = confidence.get("tier", "")
+        tier_desc = confidence.get("tier_description", "")
+        if tier:
+            st.markdown(f"**Confidence tier:** `{tier}` — {tier_desc}")
+        cal_p = confidence.get("calibrated_p")
+        if cal_p is not None:
+            st.markdown(f"**Calibrated p:** `{cal_p:.3f}`")
         warnings = list(confidence.get("warnings") or [])
         if warnings:
             st.markdown("**Warnings:**")
@@ -299,88 +300,272 @@ def _render_prediction_details(prediction: dict) -> None:
                 st.markdown(f"- {w}")
 
 
-def _render_model_breakdown(prediction: dict) -> None:
-    """Section 2: pi-only, elo-only, blend probabilities + agreement.
+# --------------------------------------------------------------------------- #
+# Section 2: Elo
+# --------------------------------------------------------------------------- #
+def _render_elo_section(prediction: dict) -> None:
+    """Show Elo-only H/D/A, rating difference, and availability flags."""
+    elo_only = prediction.get("elo_only_probs") or {}
+    home_elo = prediction.get("home_elo")
+    away_elo = prediction.get("away_elo")
 
-    Uses :func:`dashboard.ux_presenters.agreement_status` so the
-    agreement label is consistent with the casual Prediction and
-    Betting Value tabs.
+    if not elo_only and home_elo is None and away_elo is None:
+        st.caption("No Elo diagnostics on this prediction.")
+        return
+
+    # ---- Elo H/D/A ---- #
+    if elo_only:
+        st.markdown("**Elo-only Home / Draw / Away:**")
+        for k in ("home", "draw", "away"):
+            v = elo_only.get(k)
+            if v is not None:
+                st.markdown(f"- {k}: {_format_probability(v)}")
+
+    # ---- Rating difference ---- #
+    if home_elo is not None and away_elo is not None:
+        diff = float(home_elo) - float(away_elo)
+        st.markdown(
+            f"**Rating difference:** `{diff:+.0f}` "
+            f"(home {float(home_elo):.0f} / away {float(away_elo):.0f})"
+        )
+    elif "blend_w_elo" in prediction:
+        # blend_was_used=True but raw ratings not on dict — show weight only
+        w_elo = prediction.get("blend_w_elo")
+        st.markdown(f"**Elo weight in blend:** `{w_elo}`")
+
+    # ---- Availability flags ---- #
+    elo_available = prediction.get("blend_was_used", False) and elo_only
+    st.markdown(
+        f"**Elo available:** `{'Yes' if elo_available else 'No'}`"
+    )
+    if not elo_available:
+        st.caption(
+            "Elo ratings were not used in this prediction's blend. "
+            "The primary model fell back to Pi or Pi+Goal."
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Section 3: Goal Model
+# --------------------------------------------------------------------------- #
+def _render_goal_model_section(prediction: dict) -> None:
+    """Show Goal-only H/D/A, xG, scoreline, low-data flags, artifact info."""
+    goal_used = prediction.get("_goal_model_used", False)
+    goal_expected = prediction.get("_goal_model_expected", False)
+    goal_probs = prediction.get("goal_model_hda") or {}
+    xg = prediction.get("_goal_model_xg") or {}
+    mls = prediction.get("_goal_model_most_likely_score")
+    total_goals = prediction.get("_goal_model_expected_total_goals")
+    low_data = prediction.get("_goal_model_low_data", False)
+    low_data_flags = prediction.get("_goal_model_low_data_flags") or []
+    model_version = prediction.get("_goal_model_version")
+    data_cutoff = prediction.get("_goal_model_data_cutoff")
+
+    # ---- Availability banner ---- #
+    if not goal_used and not goal_expected:
+        st.caption(
+            "Goal model was not loaded for this prediction. "
+            "Artifact not available at prediction time."
+        )
+        return
+
+    if not goal_used and goal_expected:
+        st.warning(
+            "Goal model was expected but failed at prediction time. "
+            "Fell back to Pi+Elo blend."
+        )
+        return
+
+    # ---- Goal H/D/A ---- #
+    if goal_probs:
+        st.markdown("**Goal-model Home / Draw / Away:**")
+        for k in ("home", "draw", "away"):
+            v = goal_probs.get(k)
+            if v is not None:
+                st.markdown(f"- {k}: {_format_probability(v)}")
+
+    # ---- xG + scoreline ---- #
+    if xg:
+        home_xg = xg.get("home_xg", "—")
+        away_xg = xg.get("away_xg", "—")
+        st.markdown(
+            f"**Expected goals:** Home `{home_xg}`, Away `{away_xg}`"
+        )
+    if total_goals is not None:
+        st.markdown(f"**Expected total goals:** `{total_goals:.2f}`")
+    if mls:
+        st.markdown(f"**Most likely scoreline:** `{mls[0]}-{mls[1]}`")
+
+    # ---- Low-data flags ---- #
+    if low_data:
+        st.markdown(f"**Low-data:** `True`")
+    if low_data_flags:
+        st.markdown("**Low-data flags:**")
+        for flag in low_data_flags:
+            st.markdown(f"- `{flag}`")
+
+    # ---- Artifact metadata ---- #
+    if model_version or data_cutoff:
+        meta_parts = []
+        if model_version:
+            meta_parts.append(f"model_version: `{model_version}`")
+        if data_cutoff:
+            meta_parts.append(f"data_cutoff: `{data_cutoff}`")
+        if meta_parts:
+            st.caption("Artifact: " + " · ".join(meta_parts))
+
+
+# --------------------------------------------------------------------------- #
+# Section 4: Pi (diagnostic only)
+# --------------------------------------------------------------------------- #
+def _render_pi_section(prediction: dict) -> None:
+    """Show Pi-only H/D/A — diagnostic only, NOT part of primary blend."""
+    pi_only = prediction.get("pi_only_probs") or {}
+
+    if not pi_only:
+        st.caption("No pi-rating diagnostics on this prediction.")
+        return
+
+    st.markdown("**Pi-only Home / Draw / Away:**")
+    for k in ("home", "draw", "away"):
+        v = pi_only.get(k)
+        if v is not None:
+            st.markdown(f"- {k}: {_format_probability(v)}")
+
+    st.caption(
+        "Pi probabilities are diagnostic only. They are NOT used in "
+        "the primary blend (primary = 60% Elo + 40% Goal Model). "
+        "Pi is shown here for reference and model-development purposes."
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Section 5: Disagreement
+# --------------------------------------------------------------------------- #
+def _render_disagreement_section(prediction: dict) -> None:
+    """Concise disagreement analysis across the three component models.
+
+    Answers:
+    - Do all three models agree on the top outcome?
+    - What is the largest probability gap on any single market?
+    - Do Goal and Elo agree?
+    - Does Pi disagree with the primary blend?
+    - Emit a concise warning when disagreement is strong.
     """
     pi_only = prediction.get("pi_only_probs") or {}
     elo_only = prediction.get("elo_only_probs") or {}
-    blend = (
+    goal_probs = prediction.get("goal_model_hda") or {}
+    primary = (
         prediction.get("primary_probs")
         or prediction.get("blend_probs")
         or prediction.get("pi_probs")
         or {}
     )
 
-    if pi_only:
-        st.markdown("**Pi-only:**")
-        st.json(pi_only)
-    if elo_only:
-        st.markdown("**Elo-only:**")
-        st.json(elo_only)
-    if blend:
-        st.markdown("**Blend:**")
-        st.json(blend)
+    # Determine which models actually ran
+    has_pi = bool(pi_only)
+    has_elo = bool(elo_only)
+    has_goal = bool(goal_probs) and prediction.get("_goal_model_used", False)
 
-    try:
-        from dashboard.ux_presenters import agreement_status
-        st.markdown(
-            f"**Agreement status:** `{agreement_status(prediction)}`"
+    # Build a dict of {model_name: {market: prob}} for comparison
+    models: dict[str, dict] = {}
+    if has_pi:
+        models["Pi"] = pi_only
+    if has_elo:
+        models["Elo"] = elo_only
+    if has_goal:
+        models["Goal"] = goal_probs
+
+    if len(models) < 2:
+        st.caption(
+            "Only one prediction model ran — disagreement analysis "
+            "requires at least two."
         )
-    except Exception:
-        # agreement_status is pure, but be defensive so a future
-        # refactor never crashes the Analysis view.
-        pass
+        return
 
+    # ---- Same top outcome? ---- #
+    tops = {}
+    for name, probs in models.items():
+        if probs:
+            tops[name] = max(("home", "draw", "away"), key=lambda m: probs.get(m, 0.0))
 
-def _render_pi_section(prediction: dict) -> None:
-    """Section 3: raw pi-rating components stored on the prediction."""
-    pi_fields = {
-        k: v
-        for k, v in prediction.items()
-        if k.startswith("pi_") and not k.endswith("_probs")
-    }
-    if pi_fields:
-        st.markdown("**Pi-rating components:**")
-        st.json(pi_fields)
+    unique_tops = set(tops.values())
+    all_agree = len(unique_tops) == 1
+
+    if all_agree:
+        top_outcome = next(iter(unique_tops))
+        agreeing = ", ".join(tops.keys())
+        st.markdown(
+            f"**Models agree:** Yes — all ({agreeing}) pick "
+            f"`{top_outcome}`."
+        )
     else:
-        st.caption("No pi-rating diagnostics on this prediction.")
+        parts = [f"{name} picks `{out}`" for name, out in tops.items()]
+        st.markdown(
+            f"**Models agree:** No — {' / '.join(parts)}."
+        )
 
+    # ---- Largest gap on any single market ---- #
+    max_gap = 0.0
+    max_gap_market = ""
+    for market in ("home", "draw", "away"):
+        vals = [p.get(market, 0.0) for p in models.values()]
+        gap = max(vals) - min(vals)
+        if gap > max_gap:
+            max_gap = gap
+            max_gap_market = market
 
-def _render_elo_section(prediction: dict) -> None:
-    """Section 4: raw Elo components stored on the prediction."""
-    elo_fields = {
-        k: v
-        for k, v in prediction.items()
-        if "elo" in k.lower() and not k.endswith("_probs")
-    }
-    if elo_fields:
-        st.markdown("**Elo components:**")
-        st.json(elo_fields)
-    else:
-        st.caption("No Elo diagnostics on this prediction.")
-
-
-def _render_blend_section(prediction: dict) -> None:
-    """Section 5: the blend formula and the per-model weights used.
-
-    Reads ``blend_w_pi`` / ``blend_w_elo`` if the prediction stores
-    them.  Falls back to documented values when the model didn't
-    materialise the per-game weights.
-    """
-    st.markdown("**Blend formula:**")
-    st.markdown("`blend = w_pi * pi_probs + w_elo * elo_probs`")
-    w_pi = prediction.get("blend_w_pi")
-    w_elo = prediction.get("blend_w_elo")
-    used = prediction.get("blend_was_used")
     st.markdown(
-        f"- w_pi = `{w_pi}`, w_elo = `{w_elo}`, used = `{used}`"
+        f"**Largest gap:** {max_gap * 100:.1f} pts on `{max_gap_market}`."
     )
 
+    # ---- Goal/Elo agreement ---- #
+    if has_goal and has_elo:
+        goal_top = max(("home", "draw", "away"), key=lambda m: goal_probs.get(m, 0.0))
+        elo_top = max(("home", "draw", "away"), key=lambda m: elo_only.get(m, 0.0))
+        if goal_top == elo_top:
+            st.markdown(
+                f"**Goal ↔ Elo:** Agree (both pick `{goal_top}`)."
+            )
+        else:
+            st.markdown(
+                f"**Goal ↔ Elo:** Disagree (Goal `{goal_top}` vs "
+                f"Elo `{elo_top}`)."
+            )
+    else:
+        st.markdown("**Goal ↔ Elo:** N/A (one or both missing)")
 
+    # ---- Pi vs primary blend ---- #
+    if has_pi and primary:
+        pi_top = max(("home", "draw", "away"), key=lambda m: pi_only.get(m, 0.0))
+        primary_top = max(("home", "draw", "away"), key=lambda m: primary.get(m, 0.0))
+        if pi_top == primary_top:
+            st.markdown(
+                f"**Pi vs Primary:** Agree (both pick `{pi_top}`)."
+            )
+        else:
+            st.markdown(
+                f"**Pi vs Primary:** Disagree (Pi `{pi_top}` vs "
+                f"Primary `{primary_top}`)."
+            )
+
+    # ---- Strong disagreement warning ---- #
+    if not all_agree and max_gap >= 0.10:
+        st.warning(
+            "⚠️ Strong disagreement: models pick different top outcomes "
+            f"with a {max_gap * 100:.1f}-pt gap on `{max_gap_market}`. "
+            "Treat the primary blend with elevated caution."
+        )
+    elif not all_agree:
+        st.info(
+            "Models disagree on the top outcome but the gap is modest. "
+            "The primary blend is still the official prediction."
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Remaining sections (preserved from Phase 5/6)
+# --------------------------------------------------------------------------- #
 def _render_market_comparison(prediction: dict, market: dict) -> None:
     """Section 6: model vs no-vig book, edges, +EV flags.
 
@@ -643,6 +828,12 @@ def _render_raw_diagnostics(prediction: dict, match_meta: dict) -> None:
         "elo_only_probs", "blend_was_used", "confidence", "banner",
         "canonical_home_id", "canonical_away_id", "identity_warnings",
         "_match_meta",
+        # Phase 7 model-layer fields (handled in new sections above):
+        "_goal_model_used", "_goal_model_xg", "_goal_model_low_data",
+        "_goal_model_expected", "_goal_model_most_likely_score",
+        "_goal_model_expected_total_goals", "_goal_model_version",
+        "_goal_model_data_cutoff", "_goal_model_low_data_flags",
+        "goal_model_hda",
     }
     extras = {k: v for k, v in prediction.items() if k not in handled}
     if extras:
@@ -691,6 +882,19 @@ def _lookup(
         return mapping.get(int(sel_id))
     except (TypeError, ValueError):
         return val
+
+
+# --------------------------------------------------------------------------- #
+# Pure helper for external use (formatting probabilities)
+# --------------------------------------------------------------------------- #
+def _format_probability(value: float | None) -> str:
+    """Format a probability value as a percentage string.
+
+    Returns a dash for None.  Used across all model sections.
+    """
+    if value is None:
+        return "—"
+    return f"{value * 100:.1f}%"
 
 
 __all__ = ["render_analysis_view"]

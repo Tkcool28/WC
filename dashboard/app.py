@@ -1592,11 +1592,19 @@ def _predict_match_cached(
                 "away_xg": float(_gp.away_xg),
             }
             _goal_model_low_data = bool(_gp.low_data_flags)
+            _goal_model_metadata = {
+                "most_likely_score": _gp.most_likely_score,
+                "expected_total_goals": float(_gp.expected_total_goals),
+                "model_version": _gp.model_version,
+                "data_cutoff": _gp.data_cutoff,
+                "low_data_flags": _gp.low_data_flags,
+            }
         except Exception:
             # Goal model may not have these teams — fall back gracefully
             _goal_probs = None
             _goal_model_xg = None
             _goal_model_low_data = False
+            _goal_model_metadata = None
 
     return predict_match(
         home_team=home_team,
@@ -1611,6 +1619,7 @@ def _predict_match_cached(
         goal_model_xg=_goal_model_xg,
         goal_model_low_data=_goal_model_low_data,
         _goal_model_expected=goal_predictor is not None,
+        goal_model_metadata=_goal_model_metadata,
     )
 
 
@@ -1965,10 +1974,18 @@ def _render_custom_matchup_expander(
                         "away_xg": float(_gp.away_xg),
                     }
                     _goal_model_low_data = bool(_gp.low_data_flags)
+                    _goal_model_metadata = {
+                        "most_likely_score": _gp.most_likely_score,
+                        "expected_total_goals": float(_gp.expected_total_goals),
+                        "model_version": _gp.model_version,
+                        "data_cutoff": _gp.data_cutoff,
+                        "low_data_flags": _gp.low_data_flags,
+                    }
                 except Exception:
                     _goal_probs = None
                     _goal_model_xg = None
                     _goal_model_low_data = False
+                    _goal_model_metadata = None
 
             prediction = predict_match(
                 home_team=h,
@@ -1983,6 +2000,7 @@ def _render_custom_matchup_expander(
                 goal_model_xg=_goal_model_xg,
                 goal_model_low_data=_goal_model_low_data,
                 _goal_model_expected=goal_predictor is not None,
+                goal_model_metadata=_goal_model_metadata,
             )
         except Exception:
             # Calm, plain-language error — no raw exception text / stack
@@ -2407,10 +2425,18 @@ def _render_custom_bet_expander(
                         "away_xg": float(_gp.away_xg),
                     }
                     _goal_model_low_data = bool(_gp.low_data_flags)
+                    _goal_model_metadata = {
+                        "most_likely_score": _gp.most_likely_score,
+                        "expected_total_goals": float(_gp.expected_total_goals),
+                        "model_version": _gp.model_version,
+                        "data_cutoff": _gp.data_cutoff,
+                        "low_data_flags": _gp.low_data_flags,
+                    }
                 except Exception:
                     _goal_probs = None
                     _goal_model_xg = None
                     _goal_model_low_data = False
+                    _goal_model_metadata = None
 
             prediction = predict_match(
                 home_team=h,
@@ -2425,6 +2451,7 @@ def _render_custom_bet_expander(
                 goal_model_xg=_goal_model_xg,
                 goal_model_low_data=_goal_model_low_data,
                 _goal_model_expected=goal_predictor is not None,
+                goal_model_metadata=_goal_model_metadata,
             )
         except Exception:
             # Calm, plain-language error.  No raw exception text /

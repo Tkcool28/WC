@@ -191,7 +191,7 @@ def test_app_renders_analysis_view_via_query_param() -> None:
         SELECTED_DATE as Predictions / Bets).
       * A single primary **"Show Analysis"** button is visible.
       * All 11 expanders are present.
-      * **Prediction Details** is the only expander that opens by
+      * **Primary Model** is the only expander that opens by
         default; the other 10 are collapsed.
     """
     at = AppTest.from_file(str(_DASHBOARD_APP), default_timeout=60)
@@ -211,11 +211,11 @@ def test_app_renders_analysis_view_via_query_param() -> None:
     # All 11 Analysis expanders are present.
     expander_labels = [e.label or "" for e in at.expander]
     required = [
-        "Prediction Details",
-        "Model Breakdown",
-        "Pi-Rating",
-        "Elo Rating",
-        "Blend",
+        "Primary Model",
+        "Elo",
+        "Goal Model",
+        "Pi (diagnostic only)",
+        "Disagreement",
         "Market Comparison",
         "Poisson View",
         "Squad Context",
@@ -228,12 +228,12 @@ def test_app_renders_analysis_view_via_query_param() -> None:
             f"Required expander {needle!r} missing from Analysis view: "
             f"{expander_labels!r}"
         )
-    # Prediction Details is the only default-open expander.
+    # Primary Model is the only default-open expander.
     open_expanders = [
         e.label for e in at.expander
         if getattr(e.proto, "expanded", False)
     ]
-    assert open_expanders == ["🎯 Prediction Details"], (
-        f"Expected only 'Prediction Details' to default-open; got "
+    assert open_expanders == ["🎯 Primary Model (60% Elo / 40% Goal)"], (
+        f"Expected only 'Primary Model' to default-open; got "
         f"{open_expanders!r}"
     )

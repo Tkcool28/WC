@@ -215,6 +215,7 @@ def predict_match(
     identity_unresolved: bool = False,
     canonical_home_id: str | None = None,
     canonical_away_id: str | None = None,
+    goal_model_metadata: dict | None = None,
 ) -> dict:
     """Pure model-only prediction. NO odds required.
 
@@ -303,6 +304,11 @@ def predict_match(
     _goal_model_used = False
     _goal_model_xg = None
     _goal_model_low_data = False
+    _goal_model_most_likely_score = None
+    _goal_model_expected_total_goals = None
+    _goal_model_version = None
+    _goal_model_data_cutoff = None
+    _goal_model_low_data_flags = None
     if goal_probs is not None and elo_only is not None:
         primary_raw = {
             "home": 0.6 * elo_only["home"] + 0.4 * goal_probs["home"],
@@ -317,6 +323,11 @@ def predict_match(
         _goal_model_used = True
         _goal_model_xg = goal_model_xg
         _goal_model_low_data = goal_model_low_data
+        _goal_model_most_likely_score = (goal_model_metadata or {}).get("most_likely_score")
+        _goal_model_expected_total_goals = (goal_model_metadata or {}).get("expected_total_goals")
+        _goal_model_version = (goal_model_metadata or {}).get("model_version")
+        _goal_model_data_cutoff = (goal_model_metadata or {}).get("data_cutoff")
+        _goal_model_low_data_flags = (goal_model_metadata or {}).get("low_data_flags")
     else:
         # Fall back to pi+Elo blend (or pure pi)
         primary_probs = dict(pi)
@@ -361,10 +372,18 @@ def predict_match(
         "_goal_model_xg": _goal_model_xg,
         "_goal_model_low_data": _goal_model_low_data,
         "_goal_model_expected": _goal_model_expected,
+        "_goal_model_most_likely_score": _goal_model_most_likely_score,
+        "_goal_model_expected_total_goals": _goal_model_expected_total_goals,
+        "_goal_model_version": _goal_model_version,
+        "_goal_model_data_cutoff": _goal_model_data_cutoff,
+        "_goal_model_low_data_flags": _goal_model_low_data_flags,
+        "goal_model_hda": {k: round(v, 4) for k, v in goal_probs.items()} if goal_probs is not None and _goal_model_used else None,
         "confidence": confidence,
         "banner": banner,
         "canonical_home_id": canonical_home_id or "",
         "canonical_away_id": canonical_away_id or "",
+        "home_elo": home_elo,
+        "away_elo": away_elo,
     }
 
 
