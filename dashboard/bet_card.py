@@ -198,7 +198,7 @@ def render_bet_card(
     cards on the same page don't collide.
 
     The prediction dict is required (it provides the model's most-likely
-    result and the pi_probs / blend_probs that ``evaluate_market`` will
+    result and the primary_probs that ``evaluate_market`` will
     consume). It is NEVER mutated by this function.
 
     Parameters
@@ -210,7 +210,7 @@ def render_bet_card(
     prediction
         Output of :func:`soccer_ev_model.ev_workflow.predict_match`.
         Must contain at least ``home_team`` / ``away_team`` /
-        ``blend_probs`` (or ``pi_probs``) / ``confidence``.
+        ``primary_probs`` (or ``blend_probs`` / ``pi_probs``) / ``confidence``.
     key_prefix
         Unique widget-key prefix. Conventionally the match id (cast to
         str). Used to namespace the three ``text_input`` controls and
@@ -233,9 +233,13 @@ def render_bet_card(
     # ---- (2) Most Likely Result (model's pick, NOT the value) ---- #
     mlr_key = _extract_most_likely(prediction)
     mlr_text = _outcome_headline_text(mlr_key, prediction)
-    p_top = (
-        (prediction.get("blend_probs") or prediction.get("pi_probs") or {}).get(mlr_key)
-    )
+    # primary_probs is the canonical official prediction (Phase 4+5).
+    _probs = prediction.get("primary_probs") or prediction.get("blend_probs") or prediction.get("pi_probs") or {}
+    p_top = _probs.get(mlr_key)
+    # Surface a subtle note when the goal model was expected but could
+    # not be loaded — the user is seeing Elo-only or pi-only predictions.
+    if prediction.get("_goal_model_expected") and not prediction.get("_goal_model_used"):
+        st.caption("⚠️ Goal model unavailable — using Elo-only blend.")
     st.markdown("**Most Likely Result**")
     headline_html = (
         mlr_text

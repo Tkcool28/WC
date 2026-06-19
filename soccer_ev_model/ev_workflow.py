@@ -208,16 +208,35 @@ def predict_match(
     away_elo: float | None = None,
     blend_w_pi: float = 0.5,
     blend_w_elo: float = 0.5,
+    goal_probs: dict[str, float] | None = None,
+    goal_model_xg: dict[str, float] | None = None,
+    goal_model_low_data: bool = False,
+    _goal_model_expected: bool = False,
     identity_unresolved: bool = False,
     canonical_home_id: str | None = None,
     canonical_away_id: str | None = None,
+    goal_model_metadata: dict | None = None,
 ) -> dict:
     """Pure model-only prediction. NO odds required.
 
-    Computes the raw pi-rating (or pi+Elo blend) probabilities, the
-    full confidence assessment, and the warning banner for a single
-    matchup. Returns a dict shaped to be consumable by the mobile
-    dashboard and by `evaluate_market` (the market layer).
+    Uses the deterministic fallback policy from `blend_fallback` to
+    select the primary prediction source.  The policy is:
+
+      Case A — Elo valid + Goal valid (sufficient data):
+          60/40 Elo/Goal blend, no warning.
+      Case B — Goal valid but low-data:
+          60/40 Elo/Goal blend, warning that Goal model has limited coverage.
+      Case C — Goal unavailable:
+          100% Elo, warning that Goal model is unavailable.
+      Case D — Elo unavailable:
+          100% Goal, warning that Elo is unavailable.
+      Case E — Both unavailable:
+          Uniform 1/3 baseline, low-confidence warning.
+
+    Pi-rating is diagnostic only — never an automatic primary fallback.
+
+    Returns a dict consumable by the mobile dashboard and by
+    `evaluate_market` (the market layer).
 
     The returned dict contains ONLY model-derived keys. It MUST NOT
     contain `book_odds`, `book_fair`, `calibrated_pi`, `edges`, or
@@ -226,16 +245,14 @@ def predict_match(
     Args:
         home_team, away_team: human-readable team names.
         home_team_id, away_team_id: integer team ids (must match `ratings` keys).
-        date: ISO date string (e.g. "2026-06-16").
+        date: ISO date string (e.g. "2026-06-18").
         ratings: output of compute_pi_ratings() at the cutoff date.
-        home_elo, away_elo: optional Elo ratings. If BOTH are provided,
-            the model uses a hand-tuned blend of pi-rating and Elo; if
-            either is None, the model is pure pi-rating. Hand-tuned
-            weights from scripts/blend_backtest.py: w_pi=0.5, w_elo=0.5
-            was the best of 3 candidates on the 2022 WC walk-forward
-            (RPS 0.222 vs 0.230 for pi-only, n=64).
-        blend_w_pi, blend_w_elo: blend weights (default 0.5/0.5).
-            Ignored if home_elo or away_elo is None.
+        home_elo, away_elo: optional Elo ratings. When BOTH are provided
+            the Elo component is available for the fallback policy; if
+            either is None Elo is treated as unavailable.
+        goal_probs: optional goal model H/D/A probabilities. When provided,
+            the Goal component is available for the fallback policy.
+        goal_model_low_data: True when Goal model has limited coverage.
         identity_unresolved: keyword-only. Set by the dashboard when
             team identity could not be resolved through the canonical
             registry. Propagated into the returned `confidence` dict
@@ -243,68 +260,98 @@ def predict_match(
             warning without conflating it with the "low data" tier.
         canonical_home_id, canonical_away_id: optional 3-letter
             canonical team ids (e.g. "ARG", "BRA"). Surfaced in the
-            result so downstream renderers don't have to re-look-up
-            identities. Empty string if unresolved.
-
-    Returns:
-        dict with at least these keys:
-          - home_team, away_team
-          - home_team_id, away_team_id
-          - date
-          - pi_probs           (3-way dict, the blend or pure pi)
-          - blend_probs        (3-way dict, alias of pi_probs)
-          - pi_only_probs      (3-way dict, pure pi)
-          - elo_only_probs     (3-way dict or None)
-          - blend_was_used     (bool)
-          - blend_w_pi         (float, the weight used)
-          - blend_w_elo        (float, the weight used)
-          - confidence         (full assess_match_confidence dict)
-          - banner             (str)
-          - canonical_home_id  (str, best-effort; "" if unresolved)
-          - canonical_away_id  (str, best-effort; "" if unresolved)
-    """
+            Returns:
+                dict with at least these keys:
+                  - primary_probs      (3-way dict, the official blended prediction)
+                  - pi_probs           (3-way dict, pure pi-rating — diagnostic only)
+                  - blend_probs        (3-way dict, alias of primary_probs)
+                  - pi_only_probs      (3-way dict, pure pi-rating)
+                  - elo_only_probs     (3-way dict or None)
+                  - home_team, away_team
+                  - home_team_id, away_team_id
+                  - date
+                  - blend_was_used     (bool, True when Elo is available)
+                  - blend_w_pi         (float, always 0.0 — Pi not in primary blend)
+                  - blend_w_elo        (float, the Elo weight used)
+                  - primary_w_elo      (float, actual Elo weight used)
+                  - primary_w_goal     (float, actual Goal weight used)
+                  - fallback_case      (str, "A" | "B" | "C" | "D" | "E")
+                  - primary_warnings   (list[str])
+                  - confidence         (full assess_match_confidence dict)
+                  - banner             (str)
+                  - canonical_home_id  (str, best-effort; "" if unresolved)
+                  - canonical_away_id  (str, best-effort; "" if unresolved)
+            """
     # Build a synthetic match dict for the existing probs helper
+    from .blend_fallback import predict_with_fallback
+
     match = {
         "home_team_id": home_team_id,
         "away_team_id": away_team_id,
         "date": date,
     }
+
+    # Always compute pi-only (diagnostic — never used as primary fallback)
+    pi_only = _probs_from_ratings(match, ratings)
+
+    # Compute elo-only probabilities if both Elo ratings are available
     if home_elo is not None and away_elo is not None:
-        pi = _probs_from_ratings_blend(
-            match, ratings,
-            home_elo=home_elo, away_elo=away_elo,
-            w_pi=blend_w_pi, w_elo=blend_w_elo,
-        )
-        pi_only = _probs_from_ratings(match, ratings)
         elo_only = _probs_from_ratings_blend(
             match, ratings,
             home_elo=home_elo, away_elo=away_elo,
             w_pi=0.0, w_elo=1.0,
         )
-        blend_was_used = True
+        elo_available = True
     else:
-        pi = _probs_from_ratings(match, ratings)
-        pi_only = pi
         elo_only = None
-        blend_was_used = False
+        elo_available = False
 
-    # Confidence assessment
+    # Determine Goal model availability
+    goal_available = goal_probs is not None
+
+    # Use the deterministic fallback policy from blend_fallback
+    blend_result = predict_with_fallback(
+        home_team=home_team,
+        away_team=away_team,
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+        match_date=date,
+        elo_probs={k: round(v, 6) for k, v in elo_only.items()} if elo_only is not None else None,
+        goal_probs={k: round(v, 6) for k, v in goal_probs.items()} if goal_probs is not None else None,
+        elo_available=elo_available,
+        goal_available=goal_available,
+        goal_low_data=goal_model_low_data,
+        pi_probs={k: round(v, 6) for k, v in pi_only.items()},
+    )
+
+    primary_probs = blend_result.primary_probs
+
+    # Goal model metadata (only relevant when goal model contributed to blend)
+    _goal_model_used = goal_available and blend_result.w_goal > 0
+    _goal_model_xg = goal_model_xg if _goal_model_used else None
+    _goal_model_low_data = goal_model_low_data if _goal_model_used else False
+    _goal_model_most_likely_score = (goal_model_metadata or {}).get("most_likely_score") if _goal_model_used else None
+    _goal_model_expected_total_goals = (goal_model_metadata or {}).get("expected_total_goals") if _goal_model_used else None
+    _goal_model_version = (goal_model_metadata or {}).get("model_version") if _goal_model_used else None
+    _goal_model_data_cutoff = (goal_model_metadata or {}).get("data_cutoff") if _goal_model_used else None
+    _goal_model_low_data_flags = (goal_model_metadata or {}).get("low_data_flags") if _goal_model_used else None
+
+    # Confidence assessment (uses pure pi as proxy — independent of primary)
     home_exp = get_team_experience(ratings, home_team_id)
     away_exp = get_team_experience(ratings, away_team_id)
     confidence = assess_match_confidence(
         home_matches_played=home_exp["matches_played"],
         away_matches_played=away_exp["matches_played"],
-        pi_probs=pi,
+        pi_probs=pi_only,
     )
-    # Identity-resolution flag is a *separate* signal from the tier logic
-    # in `assess_match_confidence`. The dashboard uses it to show a
-    # "Team identity could not be resolved" warning INSTEAD of (or in
-    # addition to) the low-data warning. We attach it here so the
-    # renderer's existing _render_warnings / _render_confidence_banner
-    # functions continue to work unchanged.
     confidence["identity_unresolved"] = bool(identity_unresolved)
 
-    banner = render_warning_banner(confidence)
+    # Build fallback-aware banner
+    fallback_banner_suffix = ""
+    if blend_result.warnings:
+        fallback_banner_suffix = " | " + " | ".join(blend_result.warnings)
+
+    banner = render_warning_banner(confidence) + fallback_banner_suffix
 
     return {
         "home_team": home_team,
@@ -312,20 +359,37 @@ def predict_match(
         "home_team_id": home_team_id,
         "away_team_id": away_team_id,
         "date": date,
-        "pi_probs": {k: round(v, 4) for k, v in pi.items()},
-        # Explicit alias: `pi_probs` is the Pi+Elo blend when Elo is supplied,
-        # else pure pi. `blend_probs` is the same dict under a clearer name.
-        # Both keys are kept for backward compatibility with existing readers.
-        "blend_probs": {k: round(v, 4) for k, v in pi.items()},
+        # primary_probs: the official prediction source from the fallback
+        # policy.  blend_probs is the canonical alias.  pi_probs is pure
+        # pi-rating — diagnostic only, NOT the primary blend.
+        "primary_probs": {k: round(v, 4) for k, v in primary_probs.items()},
+        "pi_probs": {k: round(v, 4) for k, v in pi_only.items()},
+        "blend_probs": {k: round(v, 4) for k, v in primary_probs.items()},
         "pi_only_probs": {k: round(v, 4) for k, v in pi_only.items()},
         "elo_only_probs": {k: round(v, 4) for k, v in elo_only.items()} if elo_only is not None else None,
-        "blend_was_used": blend_was_used,
-        "blend_w_pi": blend_w_pi,
-        "blend_w_elo": blend_w_elo,
+        "blend_was_used": elo_available,
+        "blend_w_pi": 0.0,
+        "blend_w_elo": blend_result.w_elo,
+        "primary_w_elo": blend_result.w_elo,
+        "primary_w_goal": blend_result.w_goal,
+        "fallback_case": blend_result.case,
+        "primary_warnings": list(blend_result.warnings),
+        "_goal_model_used": _goal_model_used,
+        "_goal_model_xg": _goal_model_xg,
+        "_goal_model_low_data": _goal_model_low_data,
+        "_goal_model_expected": _goal_model_expected,
+        "_goal_model_most_likely_score": _goal_model_most_likely_score,
+        "_goal_model_expected_total_goals": _goal_model_expected_total_goals,
+        "_goal_model_version": _goal_model_version,
+        "_goal_model_data_cutoff": _goal_model_data_cutoff,
+        "_goal_model_low_data_flags": _goal_model_low_data_flags,
+        "goal_model_hda": {k: round(v, 4) for k, v in goal_probs.items()} if goal_probs is not None and _goal_model_used else None,
         "confidence": confidence,
         "banner": banner,
         "canonical_home_id": canonical_home_id or "",
         "canonical_away_id": canonical_away_id or "",
+        "home_elo": home_elo,
+        "away_elo": away_elo,
     }
 
 
@@ -347,8 +411,10 @@ def evaluate_market(
 
     Args:
         prediction: dict produced by `predict_match`. Must contain at
-            minimum: `pi_probs` (3-way dict), `confidence` (with key
-            `calibrated_p`), `home_team`, `away_team`.
+            minimum: `primary_probs` (3-way dict), `confidence` (with key
+            `calibrated_p`), `home_team`, `away_team`.  `primary_probs` is
+            the official blended prediction field.  For backward compat,
+            `pi_probs` is accepted if `primary_probs` is missing.
         book_home_odds, book_draw_odds, book_away_odds: American odds.
             Must be valid (non-zero, in range). Inherits the same
             `ValueError` semantics as `no_vig.remove_vig`.
@@ -378,13 +444,17 @@ def evaluate_market(
         ValueError: if `prediction` is missing required keys.
     """
     # ---- validate prediction dict ----
-    required = ("pi_probs", "confidence")
+    required = ("primary_probs",)
     for k in required:
         if k not in prediction:
-            raise ValueError(
-                f"evaluate_market: prediction dict missing required key {k!r}"
-            )
-    pi_probs = prediction["pi_probs"]
+            # Backward compat: accept pi_probs if primary_probs is missing
+            if "pi_probs" in prediction:
+                prediction["primary_probs"] = prediction["pi_probs"]
+            else:
+                raise ValueError(
+                    f"evaluate_market: prediction dict missing required key 'primary_probs'"
+                )
+    primary_probs = prediction["primary_probs"]
     confidence = prediction.get("confidence") or {}
     if "calibrated_p" not in confidence:
         raise ValueError(
@@ -395,15 +465,15 @@ def evaluate_market(
     imp = implied_probs(book_home_odds, book_draw_odds, book_away_odds)
     book_fair = imp["fair"]
 
-    # ---- calibrated pi probs. NOTE: consumed ONLY by the +EV flag
+    # ---- calibrated primary probs. NOTE: consumed ONLY by the +EV flag
     # pipeline below. The dashboard prediction summary intentionally
-    # displays the raw blend (`pi_probs`/`blend_probs`), not these
-    # calibrated values — calibration is an EV-layer concern. ----
-    calibrated_pi = _calibrate_probs(pi_probs, confidence["calibrated_p"])
+    # displays the raw primary_probs, not these calibrated values —
+    # calibration is an EV-layer concern. ----
+    calibrated_pi = _calibrate_probs(primary_probs, confidence["calibrated_p"])
 
-    # ---- edges (raw pi minus book_fair). This is the +EV signal. ----
+    # ---- edges (raw primary minus book_fair). This is the +EV signal. ----
     edges = {
-        m: round(pi_probs[m] - book_fair[m], 4)
+        m: round(primary_probs[m] - book_fair[m], 4)
         for m in ("home", "draw", "away")
     }
 
@@ -431,7 +501,7 @@ def evaluate_market(
         # `prediction_summary.largest_market_delta`: model - market,
         # in percentage points).
         deltas_pct = {
-            m: round((pi_probs[m] - book_fair[m]) * 100, 1)
+            m: round((primary_probs[m] - book_fair[m]) * 100, 1)
             for m in ("home", "draw", "away")
         }
         market_divergence = market_divergence_label(deltas_pct)
@@ -443,7 +513,7 @@ def evaluate_market(
         largest_market_delta_val = largest_market_delta(
             deltas_pct,
             market_labels=market_labels,
-            model_probs=pi_probs,
+            model_probs=primary_probs,
             market_probs=book_fair,
         )
     except Exception:

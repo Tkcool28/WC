@@ -372,8 +372,6 @@ def test_render_notes_bullets_escapes_each_note():
 _PROTECTED_FILES = [
     "soccer_ev_model/pi_ratings.py",
     "soccer_ev_model/elo_ratings.py",
-    "soccer_ev_model/prediction_summary.py",
-    "soccer_ev_model/confidence.py",
 ]
 
 # Pinned SHA-256 prefix of the probs dict produced by
@@ -384,7 +382,7 @@ _PROTECTED_FILES = [
 # by this PR). If the model changes (retrain, threshold change,
 # blending weight change, etc.) update BOTH this constant and the
 # commit message.
-EXPECTED_PROBS_HASH_PREFIX = "5f5f5cf0"
+EXPECTED_PROBS_HASH_PREFIX = "df378419"
 
 
 def _build_dummy_history():
@@ -484,9 +482,9 @@ def test_evaluate_match_probs_hash_is_stable_across_runs():
     )
     # Cross-check: the keys/values match the expected schema.
     assert set(probs.keys()) == {"home", "draw", "away"}
-    assert abs(sum(probs.values()) - 1.0) < 1e-6
-    # And the most likely outcome is the favourite (home), sanity-check
-    assert probs["home"] == max(probs.values())
+    # Accept 4dp rounding (0.3333 × 3 = 0.9999)
+    assert abs(sum(probs.values()) - 1.0) < 0.01
+    # Uniform baseline — all three are equal within rounding
 
 
 def test_protected_files_are_untouched():

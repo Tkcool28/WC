@@ -84,15 +84,15 @@ def matches_played_confidence_label(matches_played: int) -> str:
 # Overall confidence tier and what action is reasonable
 # This is what the dashboard displays.
 # Tiers (best to worst):
-#   A: pi is honest AND team has plenty of data  -> trust the number
-#   B: pi is honest OR data is good, not both    -> moderate trust
-#   C: pi is overconfident AND/OR data is sparse -> be skeptical
-#   D: insufficient data (team never played)     -> pi is a coin flip
+#   A: model is well-calibrated AND team has plenty of data -> trust the number
+#   B: one of calibration or data is good, not both         -> moderate trust
+#   C: model is overconfident AND/OR data is sparse         -> be skeptical
+#   D: insufficient data (team never played)                -> the model is a coin flip
 TIER_DESCRIPTIONS = {
-    "A": "High confidence — pi-rating is well-calibrated and team has ample match history. Trust the number.",
-    "B": "Moderate confidence — pi-rating is decent but with some calibration or data caveats.",
-    "C": "Low confidence — pi-rating is overconfident at this level OR team has limited history. Treat as a rough estimate.",
-    "D": "Insufficient data — one or both teams have <5 prior matches. Pi-rating is essentially a coin flip here.",
+    "A": "High confidence — the model is well-calibrated and the team has ample match history. Trust the number.",
+    "B": "Moderate confidence — mild calibration or data caveats apply.",
+    "C": "Low confidence — the model tends to be overconfident at this probability level OR the team has limited history. Treat as a rough estimate.",
+    "D": "Insufficient data — one or both teams have <5 prior matches. The model is essentially a coin flip here.",
 }
 
 
@@ -200,7 +200,7 @@ def assess_match_confidence(
 def render_warning_banner(assessment: dict[str, Any]) -> str:
     """Render a single-line warning banner for the dashboard.
 
-    The dashboard can prepend this to the pi-rating output to give the user
+    The dashboard can prepend this to the model output to give the user
     a quick visual cue. Empty string if no warnings.
     """
     tier = assessment["tier"]

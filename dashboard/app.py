@@ -116,6 +116,7 @@ from dashboard.data_loader import (  # noqa: E402
 from dashboard.team_resolution import (  # noqa: E402
     resolve_match_for_prediction as _resolve_match_for_prediction,
 )
+from soccer_ev_model.goal_model_cached import get_goal_predictor as _get_goal_predictor  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -319,10 +320,10 @@ def _render_warnings(assessment: dict) -> None:
 def _render_market_baseline(result: dict) -> None:
     """Render the market baseline section (model vs no-vig book comparison).
 
-    Reads ``result['blend_probs']`` (fallback ``pi_probs`` via
-    ``resolve_model_probs_for_market``) and ``result['book_fair']``, then
-    shows the per-market deltas, a divergence label, and the outcome with
-    the largest disagreement.  Pure presentation: no I/O, no model calls.
+    Reads ``result['primary_probs']`` (via ``resolve_model_probs_for_market``)
+    and ``result['book_fair']``, then shows the per-market deltas, a
+    divergence label, and the outcome with the largest disagreement.
+    Pure presentation: no I/O, no model calls.
     """
     model_probs = resolve_model_probs_for_market(result)
     market_probs = result["book_fair"]
@@ -1030,7 +1031,7 @@ def _render_analysis_tab(
     with st.expander("Model Breakdown", expanded=False):
         _render_section_table(_ux_analysis_model(result))
         # Keep the original Pi / Elo / Blend probability table
-        blended = result.get("blend_probs", result["pi_probs"])
+        blended = result.get("primary_probs", result.get("blend_probs", result["pi_probs"]))
         pi_only = result.get("pi_only_probs") or blended
         elo_only = result.get("elo_only_probs")
         rows = []
@@ -1523,6 +1524,7 @@ def _predict_match_cached(
     _ratings_id: int,
     _elo_snapshots_id: int,
     _corpus_id: int,
+    goal_predictor=None,
 ) -> dict:
     """Per-match prediction with a stable cache key (avoids hashing the
     full ``ratings`` dict).
@@ -1535,6 +1537,11 @@ def _predict_match_cached(
     The ``_ratings_id`` / ``_elo_snapshots_id`` / ``_corpus_id`` parameters
     are small integer handles produced by the caller.  When the underlying
     data changes, the caller bumps its id and the cache invalidates.
+
+    When ``goal_predictor`` is provided and both teams are recognized by
+    the goal model, the H/D/A probabilities from the goal model are
+    passed to ``predict_match`` so that ``primary_probs`` reflects the
+    Elo60/Goal40 blend.
     """
     # Lazy imports so the module import graph stays flat for callers
     # that only need formatters.
@@ -1564,6 +1571,41 @@ def _predict_match_cached(
         home_elo, _ = elo_at(_elo, home_team, date_iso)
         away_elo, _ = elo_at(_elo, away_team, date_iso)
 
+    # Obtain goal model probs when predictor is available
+    _goal_probs = None
+    _goal_model_xg = None
+    _goal_model_low_data = False
+    if goal_predictor is not None:
+        try:
+            _gp = goal_predictor.predict(
+                home_team_id=home_team_id,
+                away_team_id=away_team_id,
+                match_date=date_iso,
+            )
+            _goal_probs = {
+                "home": float(_gp.hda_probs["home"]),
+                "draw": float(_gp.hda_probs["draw"]),
+                "away": float(_gp.hda_probs["away"]),
+            }
+            _goal_model_xg = {
+                "home_xg": float(_gp.home_xg),
+                "away_xg": float(_gp.away_xg),
+            }
+            _goal_model_low_data = bool(_gp.low_data_flags)
+            _goal_model_metadata = {
+                "most_likely_score": _gp.most_likely_score,
+                "expected_total_goals": float(_gp.expected_total_goals),
+                "model_version": _gp.model_version,
+                "data_cutoff": _gp.data_cutoff,
+                "low_data_flags": _gp.low_data_flags,
+            }
+        except Exception:
+            # Goal model may not have these teams — fall back gracefully
+            _goal_probs = None
+            _goal_model_xg = None
+            _goal_model_low_data = False
+            _goal_model_metadata = None
+
     return predict_match(
         home_team=home_team,
         away_team=away_team,
@@ -1573,6 +1615,11 @@ def _predict_match_cached(
         ratings=_ratings,
         home_elo=home_elo,
         away_elo=away_elo,
+        goal_probs=_goal_probs,
+        goal_model_xg=_goal_model_xg,
+        goal_model_low_data=_goal_model_low_data,
+        _goal_model_expected=goal_predictor is not None,
+        goal_model_metadata=_goal_model_metadata,
     )
 
 
@@ -1585,7 +1632,7 @@ _ELO_BY_ID: dict[int, dict] = {}
 
 
 def _render_predictions_view(
-    corpus: list[dict], name_to_id: dict[str, int], elo_snapshots: dict
+    corpus: list[dict], name_to_id: dict[str, int], elo_snapshots: dict, goal_predictor=None
 ) -> None:
     """Real Phase 3 Predictions renderer (model-only, mobile-first).
 
@@ -1707,6 +1754,7 @@ def _render_predictions_view(
                         _ratings_id=ratings_id,
                         _elo_snapshots_id=_elo_id,
                         _corpus_id=_corpus_id,
+                        goal_predictor=goal_predictor,
                     )
                 except Exception as exc:
                     # Don't take down the whole view for one bad row.
@@ -1716,6 +1764,7 @@ def _render_predictions_view(
                         "home_team_id": int(home_id),
                         "away_team_id": int(away_id),
                         "date": picked_iso,
+                        "primary_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "pi_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "blend_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "pi_only_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
@@ -1789,6 +1838,7 @@ def _render_predictions_view(
             corpus=corpus,
             name_to_id=name_to_id,
             elo_snapshots=elo_snapshots,
+            goal_predictor=goal_predictor,
         )
         return
 
@@ -1813,6 +1863,7 @@ def _render_predictions_view(
         corpus=corpus,
         name_to_id=name_to_id,
         elo_snapshots=elo_snapshots,
+        goal_predictor=goal_predictor,
     )
 
 
@@ -1820,6 +1871,7 @@ def _render_custom_matchup_expander(
     corpus: list[dict],
     name_to_id: dict[str, int],
     elo_snapshots: dict,
+    goal_predictor=None,
 ) -> None:
     """Custom-matchup expander at the bottom of the Predictions view.
 
@@ -1902,6 +1954,39 @@ def _render_custom_matchup_expander(
             away_elo, _ = elo_at(elo_snapshots, a, cutoff_iso)
 
         try:
+            _goal_probs = None
+            _goal_model_xg = None
+            _goal_model_low_data = False
+            if goal_predictor is not None:
+                try:
+                    _gp = goal_predictor.predict(
+                        home_team_id=int(h_id),
+                        away_team_id=int(a_id),
+                        match_date=match_date.isoformat(),
+                    )
+                    _goal_probs = {
+                        "home": float(_gp.hda_probs["home"]),
+                        "draw": float(_gp.hda_probs["draw"]),
+                        "away": float(_gp.hda_probs["away"]),
+                    }
+                    _goal_model_xg = {
+                        "home_xg": float(_gp.home_xg),
+                        "away_xg": float(_gp.away_xg),
+                    }
+                    _goal_model_low_data = bool(_gp.low_data_flags)
+                    _goal_model_metadata = {
+                        "most_likely_score": _gp.most_likely_score,
+                        "expected_total_goals": float(_gp.expected_total_goals),
+                        "model_version": _gp.model_version,
+                        "data_cutoff": _gp.data_cutoff,
+                        "low_data_flags": _gp.low_data_flags,
+                    }
+                except Exception:
+                    _goal_probs = None
+                    _goal_model_xg = None
+                    _goal_model_low_data = False
+                    _goal_model_metadata = None
+
             prediction = predict_match(
                 home_team=h,
                 away_team=a,
@@ -1911,6 +1996,11 @@ def _render_custom_matchup_expander(
                 ratings=ratings,
                 home_elo=home_elo,
                 away_elo=away_elo,
+                goal_probs=_goal_probs,
+                goal_model_xg=_goal_model_xg,
+                goal_model_low_data=_goal_model_low_data,
+                _goal_model_expected=goal_predictor is not None,
+                goal_model_metadata=_goal_model_metadata,
             )
         except Exception:
             # Calm, plain-language error — no raw exception text / stack
@@ -1933,7 +2023,7 @@ def _render_custom_matchup_expander(
 
 
 def _render_bets_view(
-    corpus: list[dict], name_to_id: dict[str, int], elo_snapshots: dict
+    corpus: list[dict], name_to_id: dict[str, int], elo_snapshots: dict, goal_predictor=None
 ) -> None:
     """Real Phase 4 Bets renderer (mobile-first, odds-gated).
 
@@ -2085,6 +2175,7 @@ def _render_bets_view(
                         _ratings_id=ratings_id,
                         _elo_snapshots_id=_elo_id,
                         _corpus_id=_corpus_id,
+                        goal_predictor=goal_predictor,
                     )
                 except Exception as exc:
                     # Don't take down the whole view for one bad row.
@@ -2094,6 +2185,7 @@ def _render_bets_view(
                         "home_team_id": int(home_id),
                         "away_team_id": int(away_id),
                         "date": picked_iso,
+                        "primary_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "pi_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "blend_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "pi_only_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
@@ -2313,6 +2405,39 @@ def _render_custom_bet_expander(
             away_elo, _ = elo_at(elo_snapshots, a, cutoff_iso)
 
         try:
+            _goal_probs = None
+            _goal_model_xg = None
+            _goal_model_low_data = False
+            if goal_predictor is not None:
+                try:
+                    _gp = goal_predictor.predict(
+                        home_team_id=int(h_id),
+                        away_team_id=int(a_id),
+                        match_date=match_date.isoformat(),
+                    )
+                    _goal_probs = {
+                        "home": float(_gp.hda_probs["home"]),
+                        "draw": float(_gp.hda_probs["draw"]),
+                        "away": float(_gp.hda_probs["away"]),
+                    }
+                    _goal_model_xg = {
+                        "home_xg": float(_gp.home_xg),
+                        "away_xg": float(_gp.away_xg),
+                    }
+                    _goal_model_low_data = bool(_gp.low_data_flags)
+                    _goal_model_metadata = {
+                        "most_likely_score": _gp.most_likely_score,
+                        "expected_total_goals": float(_gp.expected_total_goals),
+                        "model_version": _gp.model_version,
+                        "data_cutoff": _gp.data_cutoff,
+                        "low_data_flags": _gp.low_data_flags,
+                    }
+                except Exception:
+                    _goal_probs = None
+                    _goal_model_xg = None
+                    _goal_model_low_data = False
+                    _goal_model_metadata = None
+
             prediction = predict_match(
                 home_team=h,
                 away_team=a,
@@ -2322,6 +2447,11 @@ def _render_custom_bet_expander(
                 ratings=ratings,
                 home_elo=home_elo,
                 away_elo=away_elo,
+                goal_probs=_goal_probs,
+                goal_model_xg=_goal_model_xg,
+                goal_model_low_data=_goal_model_low_data,
+                _goal_model_expected=goal_predictor is not None,
+                goal_model_metadata=_goal_model_metadata,
             )
         except Exception:
             # Calm, plain-language error.  No raw exception text /
@@ -2394,9 +2524,8 @@ def _render_custom_bet_expander(
         )
         mlr_key = _extract_most_likely(prediction)
         mlr_text = _outcome_headline_text(mlr_key, prediction)
-        p_top = (
-            (prediction.get("blend_probs") or prediction.get("pi_probs") or {}).get(mlr_key)
-        )
+        _probs = prediction.get("primary_probs") or prediction.get("blend_probs") or prediction.get("pi_probs") or {}
+        p_top = _probs.get(mlr_key)
         st.markdown("**Most Likely Result**")
         headline_html = (
             mlr_text
@@ -2461,7 +2590,7 @@ def _render_custom_bet_expander(
 
 
 def _render_analysis_view(
-    corpus: list[dict], name_to_id: dict[str, int], elo_snapshots: dict
+    corpus: list[dict], name_to_id: dict[str, int], elo_snapshots: dict, goal_predictor=None
 ) -> None:
     """Real Phase 5 Analysis renderer (mobile-first, technical, model-only).
 
@@ -2580,6 +2709,7 @@ def _render_analysis_view(
                         _ratings_id=ratings_id,
                         _elo_snapshots_id=_elo_id,
                         _corpus_id=_corpus_id,
+                        goal_predictor=goal_predictor,
                     )
                 except Exception as exc:
                     # Don't take down the whole view for one bad row.
@@ -2589,6 +2719,7 @@ def _render_analysis_view(
                         "home_team_id": int(home_id),
                         "away_team_id": int(away_id),
                         "date": picked_iso,
+                        "primary_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "pi_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "blend_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                         "pi_only_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
@@ -2703,6 +2834,7 @@ def main() -> None:
     corpus = load_training_corpus()
     name_to_id = build_name_to_id(corpus)
     elo_snapshots = get_elo_snapshots()
+    goal_predictor, _goal_model_err = _get_goal_predictor()
 
     selected_view = _render_top_level_nav()
 
@@ -2741,15 +2873,15 @@ def main() -> None:
     # Route to the active section. Each section is a thin wrapper for
     # now (Phase 2); Phases 3-5 will replace them with proper renderers.
     if selected_view == "🎯 Predictions":
-        _render_predictions_view(corpus, name_to_id, elo_snapshots)
+        _render_predictions_view(corpus, name_to_id, elo_snapshots, goal_predictor=goal_predictor)
     elif selected_view == "💰 Bets":
-        _render_bets_view(corpus, name_to_id, elo_snapshots)
+        _render_bets_view(corpus, name_to_id, elo_snapshots, goal_predictor=goal_predictor)
     elif selected_view == "🔬 Analysis":
-        _render_analysis_view(corpus, name_to_id, elo_snapshots)
+        _render_analysis_view(corpus, name_to_id, elo_snapshots, goal_predictor=goal_predictor)
     else:
         # Defensive default: unknown label -> Predictions. Should not be
         # reachable because the segmented control emits known labels.
-        _render_predictions_view(corpus, name_to_id, elo_snapshots)
+        _render_predictions_view(corpus, name_to_id, elo_snapshots, goal_predictor=goal_predictor)
 
 
 if __name__ == "__main__":

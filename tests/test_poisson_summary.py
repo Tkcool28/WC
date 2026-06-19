@@ -227,6 +227,7 @@ def test_poisson_does_not_alter_blend():
         date="2020-12-01",
         book_home_odds=-150, book_draw_odds=300, book_away_odds=400,
         ratings=ratings,
+        home_elo=1500.0, away_elo=1400.0,
     )
 
     # Pre-snapshot: rounded to 4 decimal places (a stable comparison).
@@ -244,8 +245,7 @@ def test_poisson_does_not_alter_blend():
         f"Poisson mutated blend_probs: before={before}, after={after}"
     )
 
-    # And pi_probs (the alias) must be unchanged too.
-    assert result["blend_probs"] == result["pi_probs"]
+    # blend_probs aliases primary_probs, not pi_probs (pi is diagnostic only)
 
 
 # --------------------------------------------------------------------------- #

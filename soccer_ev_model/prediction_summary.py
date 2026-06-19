@@ -262,17 +262,19 @@ def largest_market_delta(
 def resolve_model_probs_for_market(evaluate_match_result: dict) -> dict[str, float]:
     """Pick the model probability dict to compare against the market.
 
-    Prefers ``result['blend_probs']`` (the explicit Pi+Elo blend alias),
-    falls back to ``result['pi_probs']`` for backward compatibility with
-    results produced by older workflow versions.  Raises ``KeyError`` if
-    neither key is present so callers fail loudly rather than guessing.
+    Prefers ``result['primary_probs']`` (the official blended prediction),
+    falls back to ``result['blend_probs']`` then ``result['pi_probs']``
+    for backward compatibility.  Raises ``KeyError`` if none are present
+    so callers fail loudly rather than guessing.
     """
+    if "primary_probs" in evaluate_match_result and evaluate_match_result["primary_probs"] is not None:
+        return evaluate_match_result["primary_probs"]
     if "blend_probs" in evaluate_match_result and evaluate_match_result["blend_probs"] is not None:
         return evaluate_match_result["blend_probs"]
     if "pi_probs" in evaluate_match_result and evaluate_match_result["pi_probs"] is not None:
         return evaluate_match_result["pi_probs"]
     raise KeyError(
-        "evaluate_match result must contain 'blend_probs' or 'pi_probs'"
+        "evaluate_match result must contain 'primary_probs', 'blend_probs', or 'pi_probs'"
     )
 
 
