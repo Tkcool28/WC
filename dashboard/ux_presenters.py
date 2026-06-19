@@ -192,9 +192,36 @@ def prediction_why_text(
         if "limited data" in wl or "insufficient data" in wl or "coin flip" in wl:
             return "Limited historical data is available for this team."
 
-    # --- 2. Models disagree (BOTH models must have run) ---
+    # Pre-compute blended probs and agreement for downstream checks
     blended = resolve_model_probs_for_market(result)
     agreement = agreement_status(result)
+
+    # --- 1b. Goal-model-aware explanations (when goal model contributed) ---
+    if result.get("_goal_model_used"):
+        # Goal model ran — pick the most specific goal-model explanation
+        if result.get("_goal_model_low_data"):
+            return "Limited goal-model history is available for this matchup."
+
+        if agreement in ("agree", "fragile"):
+            top, top_p, second, second_p = top_two_outcomes(blended)
+            home_name = result.get("home_team", "Home")
+            away_name = result.get("away_team", "Away")
+            if top == "draw":
+                return "Elo and the goal model both favor a draw."
+            fav = home_name if top == "home" else away_name
+            return f"Elo and the goal model both favor {fav}."
+
+        if result.get("_goal_model_xg"):
+            xg = result["_goal_model_xg"]
+            return (
+                f"Goal model projects {xg['home_xg']}-{xg['away_xg']} expected goals."
+            )
+
+    # --- 1c. Elo-only fallback (goal model expected but unavailable) ---
+    if result.get("_goal_model_expected") and not result.get("_goal_model_used") and result.get("blend_was_used"):
+        return "Elo-only fallback used."
+
+    # --- 2. Models disagree (BOTH models must have run) ---
     if agreement == "disagree":
         return "The prediction methods disagree on the most likely outcome."
 
@@ -229,6 +256,10 @@ def prediction_why_text(
     # --- 7. Methods disagree slightly (fragile) ---
     if agreement == "fragile":
         return "The methods disagree slightly, lowering confidence."
+
+    # --- 8. Elo-only fallback (goal model unavailable, Elo was used) ---
+    if not result.get("_goal_model_used") and result.get("blend_was_used"):
+        return "Elo-only fallback used."
 
     # Fallback
     return "The match appears closely balanced."

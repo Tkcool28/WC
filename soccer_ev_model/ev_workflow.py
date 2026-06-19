@@ -208,6 +208,10 @@ def predict_match(
     away_elo: float | None = None,
     blend_w_pi: float = 0.5,
     blend_w_elo: float = 0.5,
+    goal_probs: dict[str, float] | None = None,
+    goal_model_xg: dict[str, float] | None = None,
+    goal_model_low_data: bool = False,
+    _goal_model_expected: bool = False,
     identity_unresolved: bool = False,
     canonical_home_id: str | None = None,
     canonical_away_id: str | None = None,
@@ -236,6 +240,10 @@ def predict_match(
             (RPS 0.222 vs 0.230 for pi-only, n=64).
         blend_w_pi, blend_w_elo: blend weights (default 0.5/0.5).
             Ignored if home_elo or away_elo is None.
+        goal_probs: optional goal model H/D/A probabilities. When provided
+            along with Elo ratings, primary_probs uses the Elo60/Goal40
+            blend (60% Elo + 40% Goal model). If None or Elo is missing,
+            falls back to the pi+Elo blend (or pure pi-rating).
         identity_unresolved: keyword-only. Set by the dashboard when
             team identity could not be resolved through the canonical
             registry. Propagated into the returned `confidence` dict
@@ -289,6 +297,30 @@ def predict_match(
         elo_only = None
         blend_was_used = False
 
+    # Compute primary_probs: Elo60/Goal40 blend when goal_probs and Elo
+    # are both available, otherwise fall back to pi+Elo blend (or pure pi).
+    # This is the official prediction source for all downstream consumers.
+    _goal_model_used = False
+    _goal_model_xg = None
+    _goal_model_low_data = False
+    if goal_probs is not None and elo_only is not None:
+        primary_raw = {
+            "home": 0.6 * elo_only["home"] + 0.4 * goal_probs["home"],
+            "draw": 0.6 * elo_only["draw"] + 0.4 * goal_probs["draw"],
+            "away": 0.6 * elo_only["away"] + 0.4 * goal_probs["away"],
+        }
+        primary_total = sum(primary_raw.values())
+        if primary_total > 0:
+            primary_probs = {k: v / primary_total for k, v in primary_raw.items()}
+        else:
+            primary_probs = dict(pi)
+        _goal_model_used = True
+        _goal_model_xg = goal_model_xg
+        _goal_model_low_data = goal_model_low_data
+    else:
+        # Fall back to pi+Elo blend (or pure pi)
+        primary_probs = dict(pi)
+
     # Confidence assessment
     home_exp = get_team_experience(ratings, home_team_id)
     away_exp = get_team_experience(ratings, away_team_id)
@@ -313,10 +345,11 @@ def predict_match(
         "home_team_id": home_team_id,
         "away_team_id": away_team_id,
         "date": date,
-        # primary_probs: the official blended prediction (pi+Elo blend when Elo
-        # is available, pure pi-rating otherwise).  All consumers MUST use
-        # this field.  pi_probs and backward-compat aliases.
-        "primary_probs": {k: round(v, 4) for k, v in pi.items()},
+        # primary_probs: the official prediction source (Elo60/Goal40 blend
+        # when goal_probs is available + Elo is present, pi+Elo or pure pi
+        # otherwise).  All consumers MUST use this field.  pi_probs and
+        # blend_probs are backward-compat aliases.
+        "primary_probs": {k: round(v, 4) for k, v in primary_probs.items()},
         "pi_probs": {k: round(v, 4) for k, v in pi.items()},
         "blend_probs": {k: round(v, 4) for k, v in pi.items()},
         "pi_only_probs": {k: round(v, 4) for k, v in pi_only.items()},
@@ -324,6 +357,10 @@ def predict_match(
         "blend_was_used": blend_was_used,
         "blend_w_pi": blend_w_pi,
         "blend_w_elo": blend_w_elo,
+        "_goal_model_used": _goal_model_used,
+        "_goal_model_xg": _goal_model_xg,
+        "_goal_model_low_data": _goal_model_low_data,
+        "_goal_model_expected": _goal_model_expected,
         "confidence": confidence,
         "banner": banner,
         "canonical_home_id": canonical_home_id or "",
