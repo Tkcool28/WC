@@ -122,8 +122,15 @@ def _match(mid: int, *, stage: str | None = "GROUP_STAGE",
 
 def _pred(mid: int, *, home: float, draw: float, away: float,
           home_team: str = "Home", away_team: str = "Away",
-          has_blend: bool = True) -> dict:
-    """Return a minimal prediction dict with blend_probs (and/or pi_probs)."""
+          has_blend: bool = True, is_fallback: bool = False) -> dict:
+    """Return a minimal prediction dict with blend_probs (and/or pi_probs).
+
+    When ``is_fallback=False`` (default), the dict includes
+    ``fallback_case`` and ``primary_probs`` — matching a real
+    ``predict_match`` output.  When ``is_fallback=True``, those fields
+    are omitted so tests can exercise the fallback-skip logic in
+    :func:`highest_model_confidence`.
+    """
     pred: dict[str, Any] = {
         "home_team": home_team,
         "away_team": away_team,
@@ -132,6 +139,9 @@ def _pred(mid: int, *, home: float, draw: float, away: float,
         pred["blend_probs"] = {"home": home, "draw": draw, "away": away}
     else:
         pred["pi_probs"] = {"home": home, "draw": draw, "away": away}
+    if not is_fallback:
+        pred["fallback_case"] = "A"
+        pred["primary_probs"] = {"home": home, "draw": draw, "away": away}
     return pred
 
 
@@ -402,7 +412,9 @@ class TestHighestModelConfidence:
         predictions = {
             1: {
                 "home_team": "Iceland", "away_team": "Argentina",
+                "primary_probs": {"home": 0.10, "draw": 0.10, "away": 0.80},
                 "blend_probs": {"home": 0.10, "draw": 0.10, "away": 0.80},
+                "fallback_case": "C",
                 "book_fair": {"home": 0.95},       # book says Iceland
                 "edge": 0.85,                       # giant value
                 "odds": {"home": "+800", "away": "-2000"},
@@ -410,7 +422,9 @@ class TestHighestModelConfidence:
             },
             2: {
                 "home_team": "France", "away_team": "Brazil",
+                "primary_probs": {"home": 0.50, "draw": 0.25, "away": 0.25},
                 "blend_probs": {"home": 0.50, "draw": 0.25, "away": 0.25},
+                "fallback_case": "A",
                 "book_fair": {"home": 0.50},
                 "edge": 0.0,
                 "odds": {"home": "+100"},
@@ -442,11 +456,20 @@ class TestHighestModelConfidence:
         )
         assert result is None
 
-    def test_falls_back_to_pi_probs_when_blend_missing(self) -> None:
-        """If blend_probs is absent, use pi_probs."""
+    def test_uses_pi_probs_only_when_primary_and_blend_missing(self) -> None:
+        """If primary_probs and blend_probs are absent, fall back to pi_probs.
+
+        Create a prediction with ``fallback_case`` (so it passes the
+        real-prediction filter) but with only ``pi_probs`` set —
+        simulating a legacy prediction dict.
+        """
         cc = _import_context_cards()
         matches = [_match(1)]
-        predictions = {1: _pred(1, home=0.40, draw=0.30, away=0.30, has_blend=False)}
+        pred = _pred(1, home=0.40, draw=0.30, away=0.30, has_blend=False)
+        # Clear primary_probs and blend_probs so _probs_for falls to pi_probs.
+        pred["primary_probs"] = None
+        pred.pop("blend_probs", None)
+        predictions = {1: pred}
         result = cc.highest_model_confidence(matches, predictions)
         assert result is not None
         assert result["market"] == "home"
@@ -521,6 +544,85 @@ class TestHighestModelConfidence:
         rendered = _rendered_text(fake)
         assert "Run predictions" in rendered
 
+    # ------------------------------------------------------------------ #
+    # Hotfix tests: highest-model-confidence consistency & no stale 40.0 %
+    # ------------------------------------------------------------------ #
+
+    def test_uses_primary_probs_not_pi_probs(self) -> None:
+        """Highest confidence reads from ``primary_probs``, not ``pi_probs``.
+
+        Seed ``primary_probs`` with deliberately different values than
+        ``pi_probs`` to prove the helper reads the correct dict.
+        """
+        cc = _import_context_cards()
+        matches = [_match(1, home="USA", away="Canada")]
+        pred = _pred(1, home=0.72, draw=0.18, away=0.10)
+        # Overwrite pi_probs with a lower value so we can tell which
+        # dict was used.
+        pred["pi_probs"] = {"home": 0.35, "draw": 0.33, "away": 0.32}
+        predictions = {1: pred}
+        result = cc.highest_model_confidence(matches, predictions)
+        assert result is not None
+        # If primary_probs was used: 0.72.  If pi_probs leaked: 0.35.
+        assert result["probability"] == pytest.approx(0.72)
+        assert result["match_id"] == 1
+        assert result["market"] == "home"
+
+    def test_skips_fallback_predictions_no_stale_40(self) -> None:
+        """Fallback predictions (lacking ``fallback_case``) are skipped
+        so the highest-confidence card never shows the stale 40.0 % default.
+
+        Three matches:
+          - Match 1: real prediction at 45 % (highest valid)
+          - Match 2: fallback with 40 % (should be skipped)
+          - Match 3: real prediction at 33 %
+        Expected winner: match 1 (45 %).
+        """
+        cc = _import_context_cards()
+        matches = [
+            _match(1, home="USA", away="Mexico"),
+            _match(2, home="Canada", away="Costa_Rica"),
+            _match(3, home="Brazil", away="Argentina"),
+        ]
+        # Match 1: real prediction, home=0.45.
+        pred1 = _pred(1, home=0.45, draw=0.30, away=0.25,
+                      home_team="USA", away_team="Mexico")
+        # Match 2: fallback — no fallback_case, primary_probs etc.
+        pred2 = {
+            "home_team": "Canada", "away_team": "Costa_Rica",
+            "blend_probs": {"home": 0.40, "draw": 0.30, "away": 0.30},
+            "pi_probs": {"home": 0.40, "draw": 0.30, "away": 0.30},
+            "_is_fallback": True,
+        }
+        # Match 3: real prediction, draw=0.33.
+        pred3 = _pred(3, home=0.25, draw=0.33, away=0.42,
+                      home_team="Brazil", away_team="Argentina")
+
+        predictions = {1: pred1, 2: pred2, 3: pred3}
+        result = cc.highest_model_confidence(matches, predictions)
+
+        assert result is not None
+        # Must pick match 1 (45 %), not match 2 (40 % fallback).
+        assert result["match_id"] == 1
+        assert result["probability"] == pytest.approx(0.45)
+
+    def test_returns_none_when_all_predictions_are_fallbacks(self) -> None:
+        """When every match has only a fallback prediction (no
+        ``fallback_case``), the helper returns ``None`` so the
+        renderer shows the neutral placeholder rather than a fake 40 %.
+        """
+        cc = _import_context_cards()
+        matches = [_match(1, home="A", away="B")]
+        predictions = {
+            1: {
+                "home_team": "A", "away_team": "B",
+                "blend_probs": {"home": 0.40, "draw": 0.30, "away": 0.30},
+                "pi_probs": {"home": 0.40, "draw": 0.30, "away": 0.30},
+            },
+        }
+        result = cc.highest_model_confidence(matches, predictions)
+        assert result is None
+
 
 # =========================================================================== #
 # Autoload (Phase 9 — dashboard context cards populate on page open)
@@ -539,8 +641,10 @@ class TestAutoloadPure:
         pred = {
             "home_team": overrides.get("home", "Home"),
             "away_team": overrides.get("away", "Away"),
+            "primary_probs": {"home": 0.5, "draw": 0.3, "away": 0.2},
             "blend_probs": {"home": 0.5, "draw": 0.3, "away": 0.2},
             "pi_probs": {"home": 0.5, "draw": 0.3, "away": 0.2},
+            "fallback_case": "A",
             "canonical_home_id": "",
             "canonical_away_id": "",
         }
@@ -614,7 +718,10 @@ class TestAutoloadPure:
         def predict_match(**kwargs):
             return self._pred_stub(
                 home="France", away="Brazil",
-                extra={"blend_probs": {"home": 0.7, "draw": 0.2, "away": 0.1}},
+                extra={
+                    "primary_probs": {"home": 0.7, "draw": 0.2, "away": 0.1},
+                    "blend_probs": {"home": 0.7, "draw": 0.2, "away": 0.1},
+                },
             )
 
         payload = _autoload_pure(
@@ -748,6 +855,85 @@ class TestAutoloadPure:
         assert payload["matches"] == []
         assert payload["predictions"] == {}
         assert payload["date_iso"] == "2026-06-18"
+
+    def test_autoload_date_change_clears_highest_confidence(self) -> None:
+        """Changing the date invalidates the highest-confidence result:
+        matching predictions are replaced, and ``highest_model_confidence``
+        picks the top probability from the *new* date's matches only.
+        """
+        from dashboard.context_cards import _autoload_pure, highest_model_confidence
+
+        schedule = {
+            # Date A: single match, home=0.55
+            "2026-06-18": [
+                {"match_id": 10, "home_team_name": "USA", "away_team_name": "Canada",
+                 "home_team_id": 1, "away_team_id": 2},
+            ],
+            # Date B: single match, home=0.62 (higher than date A's)
+            "2026-06-19": [
+                {"match_id": 20, "home_team_name": "Brazil", "away_team_name": "Argentina",
+                 "home_team_id": 3, "away_team_id": 4},
+            ],
+        }
+
+        calls: dict[str, int] = {"load": 0, "predict": 0}
+
+        def load_unplayed(date_iso):
+            calls["load"] += 1
+            return schedule.get(date_iso, [])
+
+        def predict_match(**kwargs):
+            calls["predict"] += 1
+            # Return different probs per match so we can tell which
+            # prediction was used.
+            if kwargs["home_team"] == "USA":
+                return self._pred_stub(
+                    home="USA", away="Canada",
+                    extra={
+                        "primary_probs": {"home": 0.55, "draw": 0.25, "away": 0.20},
+                        "blend_probs": {"home": 0.55, "draw": 0.25, "away": 0.20},
+                    },
+                )
+            return self._pred_stub(
+                home="Brazil", away="Argentina",
+                extra={
+                    "primary_probs": {"home": 0.62, "draw": 0.20, "away": 0.18},
+                    "blend_probs": {"home": 0.62, "draw": 0.20, "away": 0.18},
+                },
+            )
+
+        # Load date A and check highest confidence.
+        payload_a = _autoload_pure(
+            "2026-06-18", corpus=[{}], elo_snapshots={},
+            load_unplayed_fn=load_unplayed,
+            predict_match_fn=predict_match,
+            get_ratings_fn=None,
+        )
+        top_a = highest_model_confidence(
+            payload_a["matches"], payload_a["predictions"],
+        )
+        assert top_a is not None
+        assert top_a["match_id"] == 10
+        assert top_a["probability"] == pytest.approx(0.55)
+
+        # Load date B and check highest confidence — must be date B's value.
+        payload_b = _autoload_pure(
+            "2026-06-19", corpus=[{}], elo_snapshots={},
+            load_unplayed_fn=load_unplayed,
+            predict_match_fn=predict_match,
+            get_ratings_fn=None,
+        )
+        top_b = highest_model_confidence(
+            payload_b["matches"], payload_b["predictions"],
+        )
+        assert top_b is not None
+        assert top_b["match_id"] == 20
+        assert top_b["probability"] == pytest.approx(0.62)
+
+        # The new date's predictions must not include the old date's data.
+        assert 10 not in payload_b["predictions"], \
+            "Old-date match must not leak into new-date predictions"
+        assert 20 in payload_b["predictions"]
 
     def test_autoload_uses_smart_default_on_first_visit(self) -> None:
         """First visit (no KEYS.SELECTED_DATE) → main() picks the smart default.

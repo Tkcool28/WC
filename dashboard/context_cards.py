@@ -336,6 +336,12 @@ def highest_model_confidence(
         if not isinstance(pred, dict):
             continue
 
+        # Safety: skip fallback predictions (those produced when
+        # predict_match raised).  Real predict_match outputs always
+        # contain the "fallback_case" key; fallback dicts don't.
+        if "fallback_case" not in pred:
+            continue
+
         probs = _probs_for(pred)
         if not probs:
             continue
@@ -490,6 +496,7 @@ def _fallback_prediction(
         "home_team_id": int(home_id) if home_id is not None else 0,
         "away_team_id": int(away_id) if away_id is not None else 0,
         "date": picked_iso,
+        "primary_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
         "pi_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
         "blend_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
         "pi_only_probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
@@ -517,6 +524,7 @@ def _autoload_pure(
     resolve_match_fn: Optional[Callable[..., tuple]] = None,
     get_ratings_fn: Optional[Callable[..., dict]] = None,
     cutoff_iso_override: Optional[str] = None,
+    goal_predictor=None,
 ) -> dict:
     """Pure helper that builds the autoload payload for ``date_iso``.
 
@@ -558,9 +566,15 @@ def _autoload_pure(
     predict_match_fn
         Callable matching the per-view signature
         ``(home_team, away_team, home_team_id, away_team_id,
-        date_iso, _ratings_id, _elo_snapshots_id, _corpus_id) -> dict``.
+        date_iso, _ratings_id, _elo_snapshots_id, _corpus_id,
+        goal_predictor=None) -> dict``.
         In production this is
         :func:`dashboard.app._predict_match_cached`.
+    goal_predictor
+        Optional goal-model predictor.  When provided, passed through to
+        ``predict_match_fn`` so the autoload path produces the same
+        predictions the per-view renderers produce (with Elo60/Goal40
+        blend instead of pure Elo).
     resolve_match_fn
         Optional ``(match, ratings, name_to_id) -> (home_res,
         away_res, warnings)`` resolver.  In production this is
@@ -661,6 +675,7 @@ def _autoload_pure(
                 _ratings_id=ratings_id,
                 _elo_snapshots_id=elo_id,
                 _corpus_id=corpus_id,
+                goal_predictor=goal_predictor,
             )
         except Exception as exc:
             pred = _fallback_prediction(
@@ -712,6 +727,7 @@ def autoload_context_for_date(
     date_iso: str,
     corpus: list[dict],
     elo_snapshots: Any,
+    goal_predictor=None,
 ) -> dict:
     """Populate session state with the context cards' data for ``date_iso``.
 
@@ -733,6 +749,9 @@ def autoload_context_for_date(
         are accepted and normalised.
     corpus, elo_snapshots
         The same data structures held by :func:`dashboard.app.main`.
+    goal_predictor
+        Optional goal-model predictor forwarded to ``_autoload_pure``
+        so autoload predictions match the per-view renderers.
 
     Returns
     -------
@@ -807,6 +826,7 @@ def autoload_context_for_date(
         predict_match_fn=_predict_match_cached,
         resolve_match_fn=resolve_match_for_prediction,
         get_ratings_fn=get_ratings,
+        goal_predictor=goal_predictor,
     )
 
     # ---- Register handles so _predict_match_cached can find them ---- #

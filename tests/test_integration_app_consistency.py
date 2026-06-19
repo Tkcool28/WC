@@ -118,6 +118,7 @@ def _fake_prediction_full(
         "banner": "OK",
         "canonical_home_id": "ARG",
         "canonical_away_id": "BRA",
+        "fallback_case": "A",
         "identity_warnings": [],
     }
 

@@ -2857,7 +2857,7 @@ def main() -> None:
             _target_date = None
     if not isinstance(_target_date, str) or not _target_date:
         _target_date = _smart_default_date().isoformat()
-    _autoload_context_for_date(_target_date, corpus, elo_snapshots)
+    _autoload_context_for_date(_target_date, corpus, elo_snapshots, goal_predictor=goal_predictor)
 
     _loaded_matches_for_cards = _ss_get(KEYS.LOADED_MATCHES, default=[]) or []
     _predictions_for_cards = _ss_get(KEYS.PREDICTIONS_BY_MATCH, default={}) or {}
