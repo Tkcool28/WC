@@ -396,7 +396,7 @@ class TestMatchupIntegration:
 
     # ── Scenario 1: Strong favorite ──
     def test_strong_favorite(self):
-        """Strong team vs weak team: primary_probs heavily favor the strong team."""
+        """Strong team vs weak team with Elo: primary_probs heavily favor the strong team."""
         ratings = self._make_ratings_many_teams()
         from soccer_ev_model.ev_workflow import predict_match
 
@@ -404,6 +404,7 @@ class TestMatchupIntegration:
             home_team="Team1", away_team="Team3",
             home_team_id=1, away_team_id=3,
             date="2021-01-01", ratings=ratings,
+            home_elo=1500.0, away_elo=700.0,
         )
         assert "primary_probs" in result
         total = sum(result["primary_probs"].values())
@@ -739,8 +740,8 @@ class TestFocusedModelIntegration:
         total = sum(result["primary_probs"].values())
         assert total == pytest.approx(1.0, abs=1e-3)
 
-    def test_predict_match_without_elo_is_pure_pi(self):
-        """Without Elo, primary_probs must equal pi_probs (pure pi-rating)."""
+    def test_predict_match_without_elo_uses_uniform_baseline(self):
+        """Without Elo or Goal, primary_probs is uniform baseline (Case E), not pi."""
         ratings = self._make_ratings()
         from soccer_ev_model.ev_workflow import predict_match
 
@@ -750,11 +751,12 @@ class TestFocusedModelIntegration:
             date="2020-12-01", ratings=ratings,
         )
         assert result["blend_was_used"] is False
-        # Without Elo, primary_probs should be pi+Elo fallback = pi
+        assert result["fallback_case"] == "E"
+        # Without Elo or Goal, primary is uniform baseline
         for k in ("home", "draw", "away"):
-            assert result["primary_probs"][k] == pytest.approx(
-                result["pi_probs"][k], abs=1e-3
-            ), f"primary_probs[{k}] != pi_probs[{k}] without Elo"
+            assert result["primary_probs"][k] == pytest.approx(1/3, abs=0.001)
+        # pi_probs is pure pi (diagnostic) — differs from uniform baseline
+        assert result["pi_probs"] != result["primary_probs"]
 
     def test_confidence_tier_reflects_data_volume(self):
         """Confidence tier must be A/B/C/D and warnings populated for low tiers."""

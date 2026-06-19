@@ -96,7 +96,7 @@ def test_evaluate_match_edges_are_pi_minus_book_fair():
         ratings=ratings,
     )
     for market in ("home", "draw", "away"):
-        expected_edge = result["pi_probs"][market] - result["book_fair"][market]
+        expected_edge = result["primary_probs"][market] - result["book_fair"][market]
         assert result["edges"][market] == pytest.approx(expected_edge, abs=1e-6)
 
 
@@ -266,7 +266,7 @@ def test_evaluate_match_blend_returns_new_keys():
         assert abs(sum(probs.values()) - 1.0) < 1e-3
     # pi_probs should be the BLEND (not pi_only), and must differ from pi_only
     # when the Elo signal is non-neutral (1600 vs 1500 is a real edge).
-    assert result["pi_probs"] != result["pi_only_probs"]
+    assert result["pi_probs"] == result["pi_only_probs"]  # pi_probs is now pure pi (diagnostic), same as pi_only
 
 
 def test_evaluate_match_pure_pi_returns_new_keys():
@@ -295,9 +295,9 @@ def test_evaluate_match_manual_odds_regression():
         ratings=ratings,
         min_edge=0.03,
     )
-    # Edges must still be pi_probs - book_fair
+    # Edges must still be primary_probs - book_fair
     for market in ("home", "draw", "away"):
-        expected = result["pi_probs"][market] - result["book_fair"][market]
+        expected = result["primary_probs"][market] - result["book_fair"][market]
         assert result["edges"][market] == pytest.approx(expected, abs=1e-3)
     # All +EV flags must be >= min_edge
     for flag in result["plus_ev_flags"]:
@@ -328,7 +328,7 @@ def test_evaluate_match_blend_probs_alias_present_and_identical():
     assert "pi_probs" in result
     assert result["blend_probs"] is not None
     assert result["pi_probs"] is not None
-    assert result["blend_probs"] == result["pi_probs"]
+    assert result["blend_probs"] == result["primary_probs"]  # blend_probs aliases primary_probs
     # Shape sanity: home / draw / away
     assert set(result["blend_probs"].keys()) == {"home", "draw", "away"}
 
@@ -346,6 +346,6 @@ def test_evaluate_match_blend_probs_alias_holds_with_elo_too():
         home_elo=1600, away_elo=1500,
     )
     assert result["blend_was_used"] is True
-    assert result["blend_probs"] == result["pi_probs"]
+    assert result["blend_probs"] == result["primary_probs"]  # blend_probs aliases primary_probs
     # And the blend must actually differ from pi-only when Elo is non-neutral
     assert result["blend_probs"] != result["pi_only_probs"]

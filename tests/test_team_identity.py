@@ -440,8 +440,8 @@ def test_manual_odds_regression_unchanged():
     # Plus-ev flags only above threshold.
     for flag in r["plus_ev_flags"]:
         assert flag["edge"] >= 0.03
-    # Edges match pi - book_fair.
+    # Edges match primary - book_fair.
     for m in ("home", "draw", "away"):
         assert r["edges"][m] == pytest.approx(
-            r["pi_probs"][m] - r["book_fair"][m], abs=1e-6
+            r["primary_probs"][m] - r["book_fair"][m], abs=1e-6
         )

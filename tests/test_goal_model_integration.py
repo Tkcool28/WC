@@ -59,14 +59,16 @@ class TestPredictMatchGoalBlend:
         # primary_probs should be the Elo60/Goal40 blend, NOT the raw pi probs
         assert result["_goal_model_used"] is True
         pp = result["primary_probs"]
-        # The blend should differ from pure pi (which would be the pi_probs)
         pi = result["pi_probs"]
-        # They should NOT be identical (the blend shifts toward goal_probs)
-        assert pp != pi or pp == pi  # either is valid; just check it's present
+        # primary must differ from pure pi (the blend shifts toward goal_probs)
+        assert pp != pi, "primary_probs should differ from pure pi when Goal+Elo blend is active"
+        assert result["fallback_case"] == "A", "Case A expected with Elo+Goal+sufficient data"
         assert abs(pp["home"] + pp["draw"] + pp["away"] - 1.0) < 0.01
+        # Verify pi_probs is pure pi (diagnostic), not the blend
+        assert result["pi_probs"] == result["pi_only_probs"]
 
-    def test_goal_probs_without_elo_falls_back_to_pi(self) -> None:
-        """When goal_probs is provided but Elo is None, primary_probs = pi."""
+    def test_goal_probs_without_elo_uses_goal_only(self) -> None:
+        """When goal_probs is provided but Elo is None, primary_probs = Goal-only (Case D)."""
         from soccer_ev_model.ev_workflow import predict_match
 
         ratings = self._make_ratings()
@@ -84,13 +86,15 @@ class TestPredictMatchGoalBlend:
             goal_probs=goal_probs,
         )
 
-        # Without Elo, goal_probs can't be used for the blend
-        assert result["_goal_model_used"] is False
-        # primary_probs should equal pi_probs (no Elo, no goal blend)
-        assert result["primary_probs"] == result["pi_probs"]
+        # Without Elo but with Goal, fallback Case D: 100% Goal
+        assert result["_goal_model_used"] is True
+        assert result["fallback_case"] == "D", "Case D expected with Goal but no Elo"
+        # primary_probs should equal goal_probs (not pi_probs)
+        for k in ("home", "draw", "away"):
+            assert result["primary_probs"][k] == pytest.approx(goal_probs[k], abs=0.01)
 
-    def test_no_goal_probs_backward_compatible(self) -> None:
-        """Without goal_probs, behavior is identical to Phase 4."""
+    def test_no_goal_probs_uses_elo_only_fallback(self) -> None:
+        """Without goal_probs but with Elo, primary_probs = Elo-only (Case C)."""
         from soccer_ev_model.ev_workflow import predict_match
 
         ratings = self._make_ratings()
@@ -107,8 +111,15 @@ class TestPredictMatchGoalBlend:
         )
 
         assert result["_goal_model_used"] is False
-        assert result["primary_probs"] == result["pi_probs"]
-        assert result["blend_was_used"] is True
+        assert result["fallback_case"] == "C", "Case C expected with Elo but no Goal"
+        # primary_probs should equal elo_only_probs (100% Elo, not pi)
+        eo = result["elo_only_probs"]
+        pp = result["primary_probs"]
+        assert eo is not None
+        for k in ("home", "draw", "away"):
+            assert pp[k] == pytest.approx(eo[k], abs=0.01)
+        # pi_probs is pure pi — must differ from primary (which is Elo-only)
+        assert result["pi_probs"] != pp
 
     def test_goal_probs_normalizes_when_sum_is_not_1(self) -> None:
         """Elo60/Goal40 blend is normalized to sum to 1.0."""

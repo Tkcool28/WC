@@ -73,17 +73,23 @@ class TestPredictMatchPrimaryProbs:
         assert set(pp.keys()) == {"home", "draw", "away"}
         assert all(isinstance(v, float) for v in pp.values())
         assert all(0.0 <= v <= 1.0 for v in pp.values())
-        assert abs(sum(pp.values()) - 1.0) < 1e-6
+        # Accept 4dp rounding error from blend_fallback + predict_match
+        assert abs(sum(pp.values()) - 1.0) < 0.01
 
-    def test_primary_probs_equals_pi_probs(self):
-        """primary_probs and pi_probs must be identical (alias contract)."""
+    def test_primary_probs_differs_from_pi_when_elo_missing(self):
+        """Without Elo or Goal, primary_probs is uniform baseline (Case E), differs from pi."""
         _, ratings = _train_ratings()
         result = predict_match(
             home_team="Team1", away_team="Team2",
             home_team_id=1, away_team_id=2,
             date="2020-12-01", ratings=ratings,
         )
-        assert result["primary_probs"] == result["pi_probs"]
+        # With neither Elo nor Goal, fallback is Case E — uniform baseline
+        assert result["fallback_case"] in ("E",)
+        # pi_probs is pure pi — not the same as uniform baseline
+        assert result["primary_probs"] != result["pi_probs"]
+        # blend_probs is the alias of primary
+        assert result["primary_probs"] == result["blend_probs"]
 
     def test_primary_probs_equals_blend_probs(self):
         """primary_probs and blend_probs must be identical (alias contract)."""
@@ -95,8 +101,8 @@ class TestPredictMatchPrimaryProbs:
         )
         assert result["primary_probs"] == result["blend_probs"]
 
-    def test_primary_probs_with_elo(self):
-        """When Elo is provided, primary_probs reflects the pi+Elo blend."""
+    def test_primary_probs_with_elo_uses_elo_only_fallback(self):
+        """When Elo is provided but no Goal, primary_probs = Elo-only (Case C)."""
         _, ratings = _train_ratings()
         result = predict_match(
             home_team="Team1", away_team="Team2",
@@ -105,9 +111,15 @@ class TestPredictMatchPrimaryProbs:
             home_elo=1500, away_elo=1400,
         )
         assert "primary_probs" in result
-        assert result["primary_probs"] == result["pi_probs"]
+        # Elo without Goal → Case C (100% Elo)
+        assert result["fallback_case"] == "C"
+        # primary_probs should equal elo_only_probs, not pi
+        eo = result["elo_only_probs"]
+        assert eo is not None
+        for k in ("home", "draw", "away"):
+            assert result["primary_probs"][k] == pytest.approx(eo[k], abs=0.01)
+        assert result["primary_probs"] != result["pi_probs"]
         assert result["primary_probs"] == result["blend_probs"]
-        assert result["blend_was_used"] is True
 
     def test_primary_probs_without_elo(self):
         """Without Elo, primary_probs is pure pi-rating."""
@@ -242,7 +254,6 @@ class TestEvaluateMatchPrimaryProbs:
             book_away_odds=+250,
         )
         assert "primary_probs" in result
-        assert result["primary_probs"] == result["pi_probs"]
         assert result["primary_probs"] == result["blend_probs"]
 
     def test_evaluate_match_no_odds_preserves_primary_probs(self):
@@ -280,8 +291,9 @@ class TestConsumerConsistency:
 
         # Direct access patterns used by consumers
         primary = result["primary_probs"]
-        assert result["pi_probs"] == primary
         assert result["blend_probs"] == primary
+        # pi_probs is pure pi (diagnostic) — should differ from primary with Elo
+        assert result["pi_probs"] != primary
 
     def test_consumer_with_only_legacy_keys(self):
         """Consumers receiving legacy-only dicts still work via fallback."""
